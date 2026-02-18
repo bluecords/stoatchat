@@ -1,9 +1,7 @@
 use std::collections::HashSet;
 
-use authifier::models::{totp::Totp, Account, ValidatedTicket};
 use revolt_database::{
-    util::{permissions::DatabasePermissionQuery, reference::Reference},
-    Database, File, PartialServer, User,
+    Account, Database, File, PartialServer, User, ValidatedTicket, util::{permissions::DatabasePermissionQuery, reference::Reference}
 };
 use revolt_models::v0;
 use revolt_permissions::{calculate_server_permissions, ChannelPermission};
