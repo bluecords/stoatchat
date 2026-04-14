@@ -13,8 +13,8 @@ const COL: &str = "mfa_tickets";
 impl AbstractMFATickets for MongoDb {
     /// Find ticket by token
     ///
-    /// Ticket is only valid for 1 minute
-    async fn fetch_ticket_by_token(&self, token: &str) -> Result<Option<MFATicket>> {
+    /// Ticket is only valid for 5 minute
+    async fn fetch_ticket_by_token(&self, token: &str) -> Result<MFATicket> {
         let ticket: MFATicket = self
             .col(COL)
             .find_one(doc! {
@@ -25,8 +25,8 @@ impl AbstractMFATickets for MongoDb {
             .ok_or_else(|| create_error!(InvalidToken))?;
 
         if let Ok(ulid) = Ulid::from_string(&ticket.id) {
-            if Timestamp::from(ulid.datetime() + Duration::from_mins(1)) > Timestamp::now_utc() {
-                Ok(Some(ticket))
+            if Timestamp::from(ulid.datetime() + Duration::from_mins(5)) > Timestamp::now_utc() {
+                Ok(ticket)
             } else {
                 Err(create_error!(InvalidToken))
             }

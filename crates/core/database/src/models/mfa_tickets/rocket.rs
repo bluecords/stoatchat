@@ -14,7 +14,7 @@ impl<'r> FromRequest<'r> for MFATicket {
     #[allow(clippy::collapsible_match)]
     async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
         if let Some(header_mfa_ticket) = request.headers().get("x-mfa-ticket").next() {
-            if let Ok(Some(ticket)) = request
+            if let Ok(ticket) = request
                 .rocket()
                 .state::<Database>()
                 .expect("`Database`")

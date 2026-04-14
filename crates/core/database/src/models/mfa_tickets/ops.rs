@@ -9,7 +9,7 @@ mod reference;
 #[async_trait]
 pub trait AbstractMFATickets: Sync + Send {
     /// Find ticket by token
-    async fn fetch_ticket_by_token(&self, token: &str) -> Result<Option<MFATicket>>;
+    async fn fetch_ticket_by_token(&self, token: &str) -> Result<MFATicket>;
 
     /// Save ticket
     async fn save_ticket(&self, ticket: &MFATicket) -> Result<()>;

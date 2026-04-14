@@ -28,7 +28,7 @@ impl AbstractSessions for ReferenceDb {
         let sessions = self.sessions.lock().await;
         Ok(sessions
             .values()
-            .filter(|session| session.subscription.is_some() && user_ids.contains(&session.id))
+            .filter(|session| session.subscription.is_some() && user_ids.contains(&session.user_id))
             .cloned()
             .collect())
     }

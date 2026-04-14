@@ -9,7 +9,7 @@ pub async fn check_captcha(token: Option<&str>) -> Result<()> {
     if !config.api.security.captcha.hcaptcha_key.is_empty() {
         if let Some(token) = token {
             let mut map = HashMap::new();
-            map.insert("secret", config.api.security.captcha.hcaptcha_sitekey.as_str());
+            map.insert("secret", config.api.security.captcha.hcaptcha_key.as_str());
             map.insert("response", token);
 
             let client = reqwest::Client::new();

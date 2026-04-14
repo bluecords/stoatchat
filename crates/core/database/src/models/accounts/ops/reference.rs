@@ -1,4 +1,5 @@
 use crate::{AbstractAccounts, Account, DeletionInfo, EmailVerification, ReferenceDb};
+use iso8601_timestamp::Timestamp;
 use revolt_result::Result;
 
 #[async_trait]
@@ -73,12 +74,14 @@ impl AbstractAccounts for ReferenceDb {
 
     /// Find accounts which are due to be deleted
     async fn fetch_accounts_due_for_deletion(&self) -> Result<Vec<Account>> {
+        let now = Timestamp::now_utc();
         let accounts = self.accounts.lock().await;
+
         Ok(accounts
             .values()
             .filter(|account| {
-                if let Some(DeletionInfo::Scheduled { .. }) = &account.deletion {
-                    unimplemented!()
+                if let Some(DeletionInfo::Scheduled { after }) = &account.deletion {
+                    after <= &now
                 } else {
                     false
                 }

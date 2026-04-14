@@ -124,8 +124,7 @@ pub async fn login(
             // Resolve the MFA ticket
             let ticket = db
                 .fetch_ticket_by_token(&mfa_ticket)
-                .await?
-                .ok_or_else(|| create_error!(InvalidToken))?;
+                .await?;
 
             // Find the corresponding account
             let mut account = db.fetch_account(&ticket.account_id).await?;

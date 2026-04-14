@@ -1,15 +1,29 @@
+use std::time::Duration;
+
 use crate::{AbstractMFATickets, MFATicket, ReferenceDb};
+use iso8601_timestamp::Timestamp;
 use revolt_result::Result;
+use ulid::Ulid;
 
 #[async_trait]
 impl AbstractMFATickets for ReferenceDb {
     /// Find ticket by token
-    async fn fetch_ticket_by_token(&self, token: &str) -> Result<Option<MFATicket>> {
+    async fn fetch_ticket_by_token(&self, token: &str) -> Result<MFATicket> {
         let tickets = self.tickets.lock().await;
-        Ok(tickets
+        let ticket = tickets
             .values()
             .find(|ticket| ticket.token == token)
-            .cloned())
+            .ok_or_else(|| create_error!(InvalidToken))?;
+
+        if let Ok(ulid) = Ulid::from_string(&ticket.id) {
+            if Timestamp::from(ulid.datetime() + Duration::from_mins(5)) > Timestamp::now_utc() {
+                Ok(ticket.clone())
+            } else {
+                Err(create_error!(InvalidToken))
+            }
+        } else {
+            Err(create_error!(InvalidToken))
+        }
     }
 
     /// Save ticket
