@@ -31,9 +31,7 @@ mod tests {
             .dispatch()
             .await;
 
-        println!("{:?}", res.into_string().await);
-
-        // assert_eq!(res.status(), Status::Ok);
-        // assert!(res.into_json::<v0::MultiFactorStatus>().await.is_some());
+        assert_eq!(res.status(), Status::Ok);
+        assert!(res.into_json::<v0::MultiFactorStatus>().await.is_some());
     }
 }
