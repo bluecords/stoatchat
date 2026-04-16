@@ -157,4 +157,23 @@ impl AbstractUsers for ReferenceDb {
             Err(create_error!(NotFound))
         }
     }
+
+    /// Removes all relationships with the user from the list of users
+    async fn clear_user_relationships(
+        &self,
+        target_id: &str,
+        user_ids: Vec<String>,
+    ) -> Result<()> {
+        let mut users = self.users.lock().await;
+
+        for user_id in user_ids {
+            if let Some(user) = users.get_mut(&user_id) {
+                if let Some(relations) = &mut user.relations {
+                    relations.retain(|relation| relation.id != target_id);
+                }
+            }
+        }
+
+        Ok(())
+    }
 }

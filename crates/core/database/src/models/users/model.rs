@@ -1,6 +1,10 @@
 use std::{collections::HashSet, str::FromStr, time::Duration};
 
-use crate::{AMQP, Database, File, RatelimitEvent, events::client::EventV1, util::email::{email_templates, send_email}};
+use crate::{
+    events::client::EventV1,
+    util::email::{email_templates, send_email},
+    Database, File, RatelimitEvent, AMQP,
+};
 
 use futures::future::join_all;
 use iso8601_timestamp::Timestamp;
@@ -706,13 +710,9 @@ impl User {
     ) -> Result<()> {
         let mut account = db.fetch_account(&self.id).await?;
 
-        account
-            .disable(db)
-            .await?;
+        account.disable(db).await?;
 
-        account
-            .delete_all_sessions(db, None)
-            .await?;
+        account.delete_all_sessions(db, None).await?;
 
         self.update(
             db,
@@ -785,7 +785,9 @@ impl User {
             db,
             PartialUser {
                 username: Some(format!("Deleted User {}", self.id)),
+                discriminator: Some("0000".to_string()),
                 flags: Some(2),
+                relations: Some(Vec::new()),
                 ..Default::default()
             },
             vec![
@@ -812,5 +814,50 @@ impl User {
         };
 
         badges
+    }
+
+    /// Removes all relationships which include the user
+    pub async fn clear_relationships(&self, db: &Database) -> Result<()> {
+        let user_ids = self
+            .relations
+            .iter()
+            .flatten()
+            .map(|relation| relation.id.clone())
+            .collect();
+
+        db.clear_user_relationships(&self.id, user_ids).await
+    }
+
+    /// Removes user from all joined groups
+    pub async fn remove_from_all_groups(&self, db: &Database) -> Result<()> {
+        let groups = db.find_group_message_channels(&self.id).await?
+            .into_iter().map(|channel| channel.id().to_string())
+            .collect();
+
+        db.remove_user_from_groups(groups, &self.id).await?;
+
+        Ok(())
+    }
+
+    /// Deletes the user along with:
+    /// - deletes owned bots, servers and messages
+    /// - removes user from all groups
+    /// - clears relationships
+    pub async fn delete(&mut self, db: &Database) -> Result<()> {
+        for bot in db.fetch_bots_by_user(&self.id).await? {
+            bot.delete(db).await?;
+        }
+
+        for server in db.fetch_owned_servers(&self.id).await? {
+            server.delete(db).await?;
+        }
+
+        self.remove_from_all_groups(db).await?;
+        db.clear_memberships(&self.id).await?;
+        self.clear_relationships(db).await?;
+        db.delete_messages_by_user(&self.id).await?;
+        self.mark_deleted(db).await?;
+
+        Ok(())
     }
 }

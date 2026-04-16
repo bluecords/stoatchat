@@ -307,6 +307,24 @@ impl AbstractUsers for MongoDb {
     async fn delete_user(&self, id: &str) -> Result<()> {
         query!(self, delete_one_by_id, COL, id).map(|_| ())
     }
+
+    /// Removes all relationships with the user from the list of users
+    async fn clear_user_relationships(&self, target_id: &str, user_ids: Vec<String>) -> Result<()> {
+        self.col::<User>(COL)
+            .update_many(
+                doc! { "_id": { "$in": user_ids } },
+                doc! {
+                    "$pull": {
+                        "relations": {
+                            "_id": target_id.to_string()
+                        }
+                    }
+                },
+            )
+            .await
+            .map(|_| ())
+            .map_err(|_| create_database_error!("bulk_write", COL))
+    }
 }
 
 impl IntoDocumentPath for FieldsUser {

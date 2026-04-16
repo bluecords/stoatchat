@@ -55,4 +55,7 @@ pub trait AbstractUsers: Sync + Send {
 
     /// Delete a user by their id
     async fn delete_user(&self, id: &str) -> Result<()>;
+
+    /// Removes all relationships with the user from the list of users
+    async fn clear_user_relationships(&self, target_id: &str, user_ids: Vec<String>) -> Result<()>;
 }
