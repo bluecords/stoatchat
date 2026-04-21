@@ -11,55 +11,49 @@ const COL: &str = "sessions";
 impl AbstractSessions for MongoDb {
     /// Find session by id
     async fn fetch_session(&self, id: &str) -> Result<Session> {
-        self.col(COL)
-            .find_one(doc! {
-                "_id": id
-            })
-            .await
-            .map_err(|_| create_database_error!("find_one", COL))?
-            .ok_or_else(|| create_error!(UnknownUser))
+        query!(self, find_one_by_id, COL, id)?.ok_or_else(|| create_error!(UnknownUser))
     }
 
     /// Find sessions by user id
     async fn fetch_sessions(&self, user_id: &str) -> Result<Vec<Session>> {
-        self.col::<Session>(COL)
-            .find(doc! {
+        query!(
+            self,
+            find,
+            COL,
+            doc! {
                 "user_id": user_id
-            })
-            .await
-            .map_err(|_| create_database_error!("find", COL))?
-            .try_collect()
-            .await
-            .map_err(|_| create_database_error!("collect", COL))
+            }
+        )
     }
 
     /// Find sessions by user ids
     async fn fetch_sessions_with_subscription(&self, user_ids: &[String]) -> Result<Vec<Session>> {
-        self.col::<Session>(COL)
-            .find(doc! {
+        query!(
+            self,
+            find,
+            COL,
+            doc! {
                 "user_id": {
                     "$in": user_ids
                 },
                 "subscription": {
                     "$exists": true
                 }
-            })
-            .await
-            .map_err(|_| create_database_error!("find", COL))?
-            .try_collect()
-            .await
-            .map_err(|_| create_database_error!("collect", COL))
+            }
+        )
     }
 
     /// Fetch a session from the database by token
     async fn fetch_session_by_token(&self, token: &str) -> Result<Session> {
-        self.col::<Session>(COL)
-            .find_one(doc! {
+        query!(
+            self,
+            find_one,
+            COL,
+            doc! {
                 "token": token
-            })
-            .await
-            .map_err(|_| create_database_error!("find_one", COL))?
-            .ok_or_else(|| create_error!(InvalidSession))
+            }
+        )?
+        .ok_or_else(|| create_error!(InvalidSession))
     }
 
     /// Save session

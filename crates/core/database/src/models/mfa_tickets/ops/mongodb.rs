@@ -15,13 +15,7 @@ impl AbstractMFATickets for MongoDb {
     ///
     /// Ticket is only valid for 5 minute
     async fn fetch_ticket_by_token(&self, token: &str) -> Result<MFATicket> {
-        let ticket: MFATicket = self
-            .col(COL)
-            .find_one(doc! {
-                "token": token
-            })
-            .await
-            .map_err(|_| create_database_error!("find_one", COL))?
+        let ticket: MFATicket = query!(self, find_one, COL, doc! { "token": token })?
             .ok_or_else(|| create_error!(InvalidToken))?;
 
         if let Ok(ulid) = Ulid::from_string(&ticket.id) {
@@ -54,13 +48,7 @@ impl AbstractMFATickets for MongoDb {
 
     /// Delete ticket
     async fn delete_ticket(&self, id: &str) -> Result<()> {
-        self.col::<MFATicket>(COL)
-            .delete_one(doc! {
-                "_id": id
-            })
-            .await
-            .map_err(|_| create_database_error!("delete_one", COL))
-            .map(|_| ())
+        query!(self, delete_one_by_id, COL, id).map(|_| ())
     }
 
     /// Delete all expired tickets

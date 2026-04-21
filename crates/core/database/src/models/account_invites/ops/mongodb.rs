@@ -9,10 +9,7 @@ const COL: &str = "account_invites";
 impl AbstractAccountInvites for MongoDb {
     /// Find invite by id
     async fn fetch_account_invite(&self, id: &str) -> Result<AccountInvite> {
-        self.find_one_by_id(COL, id)
-            .await
-            .map_err(|_| create_database_error!("find_one", COL))?
-            .ok_or_else(|| create_error!(InvalidInvite))
+        query!(self, find_one_by_id, COL, id)?.ok_or_else(|| create_error!(InvalidInvite))
     }
 
     /// Save invite
