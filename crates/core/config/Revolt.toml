@@ -71,6 +71,10 @@ tenor_key = ""
 hcaptcha_key = ""
 hcaptcha_sitekey = ""
 
+[api.security.shield]
+host = ""
+key = ""
+
 [api.workers]
 # Maximum concurrent connections (to proxy server)
 max_concurrent_connections = 50

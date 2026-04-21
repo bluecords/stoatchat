@@ -208,8 +208,14 @@ pub struct ApiSecurityCaptcha {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct ApiSecurityShield {
+    pub host: String,
+    pub key: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct ApiSecurity {
-    pub authifier_shield_key: String,
+    pub shield: ApiSecurityShield,
     pub voso_legacy_token: String,
     pub captcha: ApiSecurityCaptcha,
     pub trust_cloudflare: bool,

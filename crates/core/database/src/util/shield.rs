@@ -1,7 +1,10 @@
+use reqwest::Client;
 use revolt_config::config;
 use revolt_result::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
+
+static CLIENT: LazyLock<Client> = LazyLock::new(Client::new);
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct ShieldValidationInput {
@@ -28,33 +31,28 @@ pub struct ValidationResult {
 }
 
 pub async fn validate_shield(input: ShieldValidationInput) -> Result<()> {
-    let config = config().await;
+    let shield = config().await.api.security.shield;
 
-    if !config.api.security.authifier_shield_key.is_empty() {
-        let client = reqwest::Client::new();
-        if let Ok(response) = client
-            .post("https://shield.authifier.com/validate")
+    if !shield.host.is_empty() {
+        if let Ok(response) = CLIENT
+            .post(format!("{}/validate", &shield.host))
             .json(&input)
-            .header("Authorization", &config.api.security.authifier_shield_key)
+            .header("Authorization", &shield.key)
             .send()
             .await
         {
-            let result: ValidationResult = response
-                .json()
+            let result = response
+                .json::<ValidationResult>()
                 .await
                 .map_err(|_| create_error!(InternalError))?;
 
             if result.blocked {
-                Err(create_error!(BlockedByShield))
-            } else {
-                Ok(())
+                return Err(create_error!(BlockedByShield));
             }
-        } else {
-            Ok(())
         }
-    } else {
-        Ok(())
     }
+
+    Ok(())
 }
 
 #[cfg(feature = "rocket-impl")]
