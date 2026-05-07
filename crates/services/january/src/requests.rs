@@ -293,7 +293,10 @@ impl Request {
                 if let Some(location) = response.headers().get("location") {
                     let location = location.to_str().map_err(|_| create_error!(ProxyError))?;
                     url = Url::from_str(location).to_internal_error()?;
-                    continue;
+
+                    if !Request::url_is_blacklisted(&url).await? {
+                        continue;
+                    }
                 } else {
                     return Err(create_error!(ProxyError));
                 }
