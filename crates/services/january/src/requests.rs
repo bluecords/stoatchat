@@ -373,7 +373,6 @@ impl Request {
                             return Err(create_error!(InvalidOperation));
                         }
                     } else {
-                        _ = tokio::net::lookup_host(&domain).await.unwrap();
                         return Err(create_error!(ProxyError));
                     }
                 }
