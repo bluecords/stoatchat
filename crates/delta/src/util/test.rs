@@ -27,8 +27,6 @@ pub struct TestHarness {
 
 impl TestHarness {
     pub async fn new() -> TestHarness {
-        let config = revolt_config::config().await;
-
         let client = Client::tracked(crate::web().await)
             .await
             .expect("valid rocket instance");
@@ -45,19 +43,7 @@ impl TestHarness {
             .expect("`Database`")
             .clone();
 
-        let connection = amqprs::connection::Connection::open(
-            &amqprs::connection::OpenConnectionArguments::new(
-                &config.rabbit.host,
-                config.rabbit.port,
-                &config.rabbit.username,
-                &config.rabbit.password,
-            ),
-        )
-        .await
-        .unwrap();
-        let channel = connection.open_channel(None).await.unwrap();
-
-        let amqp = AMQP::new(connection, channel);
+        let amqp = AMQP::new_auto().await;
 
         TestHarness {
             client,

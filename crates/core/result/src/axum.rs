@@ -28,6 +28,7 @@ impl IntoResponse for Error {
             ErrorType::UnknownChannel => StatusCode::NOT_FOUND,
             ErrorType::UnknownMessage => StatusCode::NOT_FOUND,
             ErrorType::UnknownAttachment => StatusCode::BAD_REQUEST,
+            ErrorType::CannotDeleteMessage => StatusCode::FORBIDDEN,
             ErrorType::CannotEditMessage => StatusCode::FORBIDDEN,
             ErrorType::CannotJoinCall => StatusCode::BAD_REQUEST,
             ErrorType::TooManyAttachments { .. } => StatusCode::BAD_REQUEST,
@@ -40,9 +41,7 @@ impl IntoResponse for Error {
             ErrorType::NotInGroup => StatusCode::NOT_FOUND,
             ErrorType::AlreadyPinned => StatusCode::BAD_REQUEST,
             ErrorType::NotPinned => StatusCode::BAD_REQUEST,
-            ErrorType::InSlowmode {
-                retry_after: _,
-            } => StatusCode::TOO_MANY_REQUESTS,
+            ErrorType::InSlowmode { retry_after: _ } => StatusCode::TOO_MANY_REQUESTS,
 
             ErrorType::CantCreateServers => StatusCode::FORBIDDEN,
             ErrorType::UnknownServer => StatusCode::NOT_FOUND,
@@ -82,7 +81,7 @@ impl IntoResponse for Error {
             ErrorType::DuplicateNonce => StatusCode::CONFLICT,
             ErrorType::VosoUnavailable => StatusCode::BAD_REQUEST,
             ErrorType::NotFound => StatusCode::NOT_FOUND,
-            ErrorType::NoEffect => StatusCode::OK,
+            ErrorType::NoEffect => StatusCode::BAD_REQUEST,
             ErrorType::FailedValidation { .. } => StatusCode::BAD_REQUEST,
             ErrorType::LiveKitUnavailable => StatusCode::BAD_REQUEST,
             ErrorType::NotConnected => StatusCode::BAD_REQUEST,

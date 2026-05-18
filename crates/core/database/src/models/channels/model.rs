@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 use std::{borrow::Cow, collections::HashMap};
 
+use redis_kiss::get_connection;
 use revolt_config::config;
 use revolt_models::v0::{self, MessageAuthor};
 use revolt_permissions::OverrideField;
@@ -648,7 +649,7 @@ impl Channel {
     }
 
     /// Acknowledge a message
-    pub async fn ack(&self, user: &str, message: &str) -> Result<()> {
+    pub async fn ack(&self, user: &str, message: &str, amqp: &AMQP) -> Result<()> {
         EventV1::ChannelAck {
             id: self.id().to_string(),
             user: user.to_string(),
@@ -657,17 +658,7 @@ impl Channel {
         .private(user.to_string())
         .await;
 
-        #[cfg(feature = "tasks")]
-        crate::tasks::ack::queue_ack(
-            self.id().to_string(),
-            user.to_string(),
-            crate::tasks::ack::AckEvent::AckMessage {
-                id: message.to_string(),
-            },
-        )
-        .await;
-
-        Ok(())
+        crate::util::acker::ack_channel(user, self.id(), message, amqp).await
     }
 
     /// Remove user from a group

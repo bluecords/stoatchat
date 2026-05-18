@@ -124,11 +124,18 @@ pub struct Database {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct RabbitQueues {
+    pub acks: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct Rabbit {
     pub host: String,
     pub port: u16,
     pub username: String,
     pub password: String,
+    pub default_exchange: String,
+    pub queues: RabbitQueues,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -250,6 +257,7 @@ pub struct LiveKitNode {
 #[derive(Deserialize, Debug, Clone)]
 pub struct ApiUsers {
     pub early_adopter_cutoff: Option<u64>,
+    pub min_username_length: usize,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -318,6 +326,11 @@ impl Pushd {
     pub fn get_generic_routing_key(&self) -> String {
         self.get_routing_key(self.generic_queue.clone())
     }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct January {
+    pub blocked_domains: Vec<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
@@ -396,6 +409,16 @@ pub struct FeaturesLimitsCollection {
 }
 
 #[derive(Deserialize, Debug, Clone)]
+pub struct LegalLinks {
+    /// Terms of Service URL
+    pub terms_of_service: String,
+    /// Privacy Policy URL
+    pub privacy_policy: String,
+    /// Guidelines URL
+    pub guidelines: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
 pub struct FeaturesAdvanced {
     #[serde(default)]
     pub process_message_delay_limit: u16,
@@ -412,6 +435,7 @@ impl Default for FeaturesAdvanced {
 #[derive(Deserialize, Debug, Clone)]
 pub struct Features {
     pub limits: FeaturesLimitsCollection,
+    pub legal_links: LegalLinks,
     pub webhooks_enabled: bool,
     pub mass_mentions_send_notifications: bool,
     pub mass_mentions_enabled: bool,
@@ -439,6 +463,7 @@ pub struct Settings {
     pub hosts: Hosts,
     pub api: Api,
     pub pushd: Pushd,
+    pub january: January,
     pub files: Files,
     pub features: Features,
     pub sentry: Sentry,

@@ -88,7 +88,7 @@ impl AbstractServers for MongoDb {
                 },
                 doc! {
                     "$set": {
-                        "roles.".to_owned() + &role.id: to_document(role)
+                        "roles.".to_owned() + role.id.as_str(): to_document(role)
                             .map_err(|_| create_database_error!("to_document", "role"))?
                     }
                 },
@@ -183,6 +183,7 @@ impl IntoDocumentPath for FieldsRole {
     fn as_path(&self) -> Option<&'static str> {
         Some(match self {
             FieldsRole::Colour => "colour",
+            FieldsRole::Icon => "icon",
         })
     }
 }
