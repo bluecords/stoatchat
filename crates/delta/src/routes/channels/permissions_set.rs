@@ -41,7 +41,7 @@ pub async fn set_role_permissions(
         Channel::TextChannel { server, .. } => server.clone(),
         _ => return Err(create_error!(InvalidOperation)),
     };
-    let server = Reference::from_unchecked(server_id).as_server(db).await?;
+    let server = Reference::from_unchecked(&server_id).as_server(db).await?;
 
     if let Some(role) = server.roles.get(&role_id) {
         if role.rank <= query.get_member_rank().unwrap_or(i64::MIN) {
