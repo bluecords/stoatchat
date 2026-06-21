@@ -15,7 +15,14 @@ env:
 jobs:
   check:
     name: Rust project
-    runs-on: arc-runner-set
+    # Was arc-runner-set, which no runner in this org actually serves (see
+    # nac-server#8 / PR #3 commit history) -- now served by a dedicated
+    # self-hosted runner registered with this specific label, deliberately
+    # NOT "arc-runner-set", so it can never be matched to docker.yaml's much
+    # heavier multi-arch base-image build job. That job OOM-killed this same
+    # box (8GB RAM) once already when the runner briefly shared the
+    # arc-runner-set label with it.
+    runs-on: bluecords-stoatchat-rust
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
