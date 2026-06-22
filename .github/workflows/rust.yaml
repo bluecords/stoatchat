@@ -11,6 +11,13 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # nextest runs each test on its own thread with Rust's default 2MiB stack.
+  # On this runner, models::bots::model::tests::crud and
+  # models::users::model::tests::create_user overflow that and abort with
+  # SIGABRT -- unrelated to any app code, first time this workflow has ever
+  # actually run tests in this org (no runner previously existed for it).
+  # Raised to 8MiB, matching a typical main-thread default.
+  RUST_MIN_STACK: 8388608
 
 jobs:
   check:
