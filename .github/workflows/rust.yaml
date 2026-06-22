@@ -32,20 +32,26 @@ jobs:
     runs-on: bluecords-stoatchat-rust
     steps:
       # MongoDB's (and RabbitMQ's) containers run as root and write into
-      # bind-mounted ./.data/* on the host, owned by root. The checkout
-      # action's own clean step can't remove those files and fails the job
-      # before any code runs. Fix ownership, don't delete -- docker compose
-      # containers (including MinIO) persist across job runs on this
-      # runner and are NOT stopped between them, so an rm -rf here deletes
-      # a *live* container's bind-mounted volume out from under it. (Tried
-      # exactly that already tonight: broke MinIO's quorum, drives-online: 0,
-      # had to docker compose stop/rm/up to recover.)
+      # bind-mounted ./.data/* on the host, owned by root. Fix ownership so
+      # checkout doesn't hard-fail on permission-denied -- but the deeper
+      # issue is `clean: true` (checkout's default): it runs `git clean
+      # -ffdx`, which deletes *all* untracked/gitignored files, including
+      # .data (it's in .gitignore). Docker compose containers (MinIO,
+      # Mongo, Rabbit) persist across job runs on this runner and are NOT
+      # stopped between them, so the default clean checkout deletes a
+      # *live* container's bind-mounted volume out from under it on every
+      # single run -- confirmed tonight: chowning .data made it deletable,
+      # which let checkout's clean step actually succeed at wiping MinIO's
+      # volume each time, repeatedly breaking it (drives-online: 0) even
+      # after manually recovering it in between. `clean: false` stops
+      # checkout from touching anything outside what git itself tracks.
       - name: Fix ownership of root-owned docker data from previous run
         run: sudo chown -R "$(id -u):$(id -g)" ./.data 2>/dev/null || true
 
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
+          clean: false
 
       # Using our own runners for now:
       # - name: Free up disk space
