@@ -21,6 +21,7 @@ default = ["test", "sentry"]
 config = { workspace = true }
 cached = { workspace = true }
 once_cell = { workspace = true }
+semver = { workspace = true }
 
 # Serde
 serde = { workspace = true }

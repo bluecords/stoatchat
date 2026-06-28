@@ -24,6 +24,7 @@ pub struct ProtocolConfiguration {
     format: ProtocolFormat,
     session_token: Option<String>,
     ready_payload_fields: ReadyPayloadFields,
+    client_version: Option<String>,
 }
 
 impl ProtocolConfiguration {
@@ -33,13 +34,20 @@ impl ProtocolConfiguration {
         format: ProtocolFormat,
         session_token: Option<String>,
         ready_payload_fields: ReadyPayloadFields,
+        client_version: Option<String>,
     ) -> Self {
         Self {
             protocol_version,
             format,
             session_token,
             ready_payload_fields,
+            client_version,
         }
+    }
+
+    /// Get the app client version reported during the handshake (`?client_version=`), if any
+    pub fn get_client_version(&self) -> &Option<String> {
+        &self.client_version
     }
 
     /// Decode some WebSocket message into a T: Deserialize using the client's specified protocol format
@@ -127,6 +135,7 @@ impl handshake::server::Callback for WebsocketHandshakeCallback {
         let mut protocol_version = 1;
         let mut format = ProtocolFormat::Json;
         let mut session_token = None;
+        let mut client_version = None;
         let mut ready_payload_fields = if params.iter().any(|(k, _)| *k == "ready") {
             // If they pass the ready field, set all fields to false
 
@@ -159,6 +168,7 @@ impl handshake::server::Callback for WebsocketHandshakeCallback {
                     _ => {}
                 },
                 "token" => session_token = Some(value.into()),
+                "client_version" => client_version = Some(value.into()),
                 "ready" => {
                     // Re-enable all the fields the client specifies
                     if let Some(captures) = READY_PAYLOAD_FIELD_REGEX.captures(value) {
@@ -197,6 +207,7 @@ impl handshake::server::Callback for WebsocketHandshakeCallback {
                 format,
                 session_token,
                 ready_payload_fields,
+                client_version,
             })
             .is_ok()
         {

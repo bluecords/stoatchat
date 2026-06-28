@@ -1,7 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use revolt_models::v0::{self, DataCreateServerChannel};
-use revolt_permissions::{OverrideField, DEFAULT_PERMISSION_SERVER};
+use revolt_permissions::{
+    ChannelPermission, OverrideField, RoleClass, DEFAULT_PERMISSION, DEFAULT_PERMISSION_SERVER,
+    DEFAULT_PERMISSION_VIEW_ONLY,
+};
 use revolt_result::Result;
 use ulid::Ulid;
 
@@ -40,6 +43,17 @@ auto_derived_partial!(
         pub roles: HashMap<String, Role>,
         /// Default set of server and channel permissions
         pub default_permissions: i64,
+
+        /// Per-class default permissions, inherited live by every role assigned to that
+        /// class (see `Role.class`) unless the role explicitly overrides a given bit.
+        /// Missing entries fall back to `ClassDefault::built_in(class)` - servers created
+        /// before this feature, or that haven't customised a class yet, don't need a
+        /// migration to get sane behaviour.
+        #[serde(
+            default = "HashMap::<RoleClass, ClassDefault>::new",
+            skip_serializing_if = "HashMap::<RoleClass, ClassDefault>::is_empty"
+        )]
+        pub class_defaults: HashMap<RoleClass, ClassDefault>,
 
         /// Icon attachment
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -89,9 +103,76 @@ auto_derived_partial!(
         /// Custom icon attachment
         #[serde(skip_serializing_if = "Option::is_none")]
         pub icon: Option<File>,
+        /// Permission class this role belongs to, if any
+        ///
+        /// `None` (the default for every role created before this feature existed) means
+        /// this role behaves exactly as it always has - `permissions` is the role's
+        /// complete, self-contained allow/deny set. Assigning a class makes `permissions`
+        /// act as an override on top of that class's live-linked default instead.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        pub class: Option<RoleClass>,
+        /// Max message length override for this role, taking precedence over its
+        /// class's default (if any) - `None` inherits from the class, or from the
+        /// instance-wide default for roles with no class.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        pub max_message_length: Option<u64>,
     },
     "PartialRole"
 );
+
+auto_derived!(
+    /// The live-linked default permission set for a [`RoleClass`] on a given server.
+    pub struct ClassDefault {
+        /// Server-wide base permission for roles in this class
+        pub permissions: OverrideField,
+        /// Per-channel permission template, applied to every channel (existing and
+        /// future) for roles in this class that don't have an explicit per-role,
+        /// per-channel override on that specific channel.
+        #[serde(
+            default = "HashMap::<String, OverrideField>::new",
+            skip_serializing_if = "HashMap::<String, OverrideField>::is_empty"
+        )]
+        pub channel_overrides: HashMap<String, OverrideField>,
+        /// Default max message length for roles in this class, if overriding the
+        /// instance-wide default
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub max_message_length: Option<u64>,
+    }
+);
+
+impl ClassDefault {
+    /// Sane built-in defaults for a class, used whenever a server hasn't customised
+    /// `Server.class_defaults` for this class yet - keeps every server's roles working
+    /// out of the box without needing a backfill migration.
+    pub fn built_in(class: RoleClass) -> Self {
+        let permissions = match class {
+            RoleClass::Admin => OverrideField {
+                a: ChannelPermission::GrantAllSafe as i64,
+                d: 0,
+            },
+            RoleClass::Member => OverrideField {
+                a: *DEFAULT_PERMISSION as i64,
+                d: 0,
+            },
+            RoleClass::Free => OverrideField {
+                a: (*DEFAULT_PERMISSION_VIEW_ONLY | ChannelPermission::SendMessage as u64) as i64,
+                d: 0,
+            },
+        };
+
+        let max_message_length = match class {
+            RoleClass::Admin => None, // unlimited - enforced separately, not via a number
+            RoleClass::Member => Some(5000),
+            RoleClass::Free => Some(2000),
+        };
+
+        Self {
+            permissions,
+            channel_overrides: HashMap::new(),
+            max_message_length,
+        }
+    }
+}
 
 auto_derived!(
     /// Channel category
@@ -129,15 +210,59 @@ auto_derived!(
         Banner,
     }
 
-    /// Optional fields on server object
+    /// Optional fields on role object
     pub enum FieldsRole {
         Colour,
         Icon,
+        Class,
+        MaxMessageLength,
     }
 );
 
 #[allow(clippy::disallowed_methods)]
 impl Server {
+    /// Get this server's effective default for a permission class, falling back to
+    /// `ClassDefault::built_in` if the server hasn't customised it yet
+    pub fn get_class_default(&self, class: RoleClass) -> ClassDefault {
+        self.class_defaults
+            .get(&class)
+            .cloned()
+            .unwrap_or_else(|| ClassDefault::built_in(class))
+    }
+
+    /// Resolve the effective max message length for a member holding the given roles.
+    ///
+    /// Returns `None` if no role/class info should override the caller's own
+    /// account-tier fallback (e.g. the member holds no roles, or only unclassed roles
+    /// with no explicit override - today's behaviour, untouched). Returns
+    /// `Some(None)` for "unlimited" (any held role is in the `Admin` class - this wins
+    /// regardless of any other role held). Returns `Some(Some(n))` for a resolved
+    /// finite limit - the highest among all matching roles, since multiple roles are
+    /// additive/most-generous-wins everywhere else in this permission model too.
+    pub fn resolve_max_message_length(&self, member_role_ids: &[String]) -> Option<Option<u64>> {
+        let mut highest: Option<u64> = None;
+
+        for role_id in member_role_ids {
+            let Some(role) = self.roles.get(role_id) else {
+                continue;
+            };
+
+            if role.class == Some(RoleClass::Admin) {
+                return Some(None);
+            }
+
+            let resolved = role
+                .max_message_length
+                .or_else(|| role.class.and_then(|class| self.get_class_default(class).max_message_length));
+
+            if let Some(value) = resolved {
+                highest = Some(highest.map_or(value, |current| current.max(value)));
+            }
+        }
+
+        highest.map(Some)
+    }
+
     /// Create a server
     pub async fn create(
         db: &Database,
@@ -161,6 +286,7 @@ impl Server {
             flags: None,
             icon: None,
             roles: HashMap::new(),
+            class_defaults: HashMap::new(),
             system_messages: None,
         };
 
@@ -310,6 +436,8 @@ impl Role {
             hoist: Some(self.hoist),
             rank: Some(self.rank),
             icon: self.icon,
+            class: self.class,
+            max_message_length: self.max_message_length,
         }
     }
 
@@ -324,6 +452,8 @@ impl Role {
             hoist: false,
             permissions: Default::default(),
             icon: None,
+            class: None,
+            max_message_length: None,
         };
 
         db.insert_role(&server.id, &role).await?;
@@ -374,6 +504,8 @@ impl Role {
         match field {
             FieldsRole::Colour => self.colour = None,
             FieldsRole::Icon => self.icon = None,
+            FieldsRole::Class => self.class = None,
+            FieldsRole::MaxMessageLength => self.max_message_length = None,
         }
     }
 
@@ -444,5 +576,105 @@ mod tests {
                 .await
                 .has_channel_permission(ChannelPermission::BanMembers));
         });
+    }
+
+    mod resolve_max_message_length {
+        use std::collections::HashMap;
+
+        use revolt_permissions::RoleClass;
+
+        use crate::{ClassDefault, Role, Server};
+
+        fn server_with_role(role: Role) -> Server {
+            Server {
+                id: "server".into(),
+                owner: "owner".into(),
+                name: "Test Server".into(),
+                description: None,
+                channels: vec![],
+                categories: None,
+                system_messages: None,
+                roles: HashMap::from([(role.id.clone(), role)]),
+                default_permissions: 0,
+                class_defaults: HashMap::new(),
+                icon: None,
+                banner: None,
+                flags: None,
+                nsfw: false,
+                analytics: false,
+                discoverable: false,
+            }
+        }
+
+        fn role(id: &str, class: Option<RoleClass>, max_message_length: Option<u64>) -> Role {
+            Role {
+                id: id.into(),
+                name: "Test Role".into(),
+                permissions: Default::default(),
+                colour: None,
+                hoist: false,
+                rank: 0,
+                icon: None,
+                class,
+                max_message_length,
+            }
+        }
+
+        #[test]
+        fn no_matching_roles_returns_none_to_use_account_tier_fallback() {
+            let server = server_with_role(role("role-1", None, None));
+            assert_eq!(server.resolve_max_message_length(&["unrelated-role".into()]), None);
+        }
+
+        #[test]
+        fn unclassed_role_with_no_override_returns_none() {
+            let server = server_with_role(role("role-1", None, None));
+            assert_eq!(server.resolve_max_message_length(&["role-1".into()]), None);
+        }
+
+        #[test]
+        fn classed_role_with_no_explicit_override_inherits_class_default() {
+            let server = server_with_role(role("role-1", Some(RoleClass::Member), None));
+            let expected = ClassDefault::built_in(RoleClass::Member).max_message_length;
+            assert_eq!(
+                server.resolve_max_message_length(&["role-1".into()]),
+                Some(expected)
+            );
+        }
+
+        #[test]
+        fn explicit_role_override_wins_over_class_default() {
+            let server = server_with_role(role("role-1", Some(RoleClass::Free), Some(9999)));
+            assert_eq!(
+                server.resolve_max_message_length(&["role-1".into()]),
+                Some(Some(9999))
+            );
+        }
+
+        #[test]
+        fn admin_class_is_unlimited_even_with_other_roles_present() {
+            let mut server = server_with_role(role("admin-role", Some(RoleClass::Admin), None));
+            server
+                .roles
+                .insert("free-role".into(), role("free-role", Some(RoleClass::Free), Some(10)));
+
+            assert_eq!(
+                server.resolve_max_message_length(&["admin-role".into(), "free-role".into()]),
+                Some(None)
+            );
+        }
+
+        #[test]
+        fn multiple_roles_take_the_highest_resolved_limit() {
+            let mut server = server_with_role(role("role-a", None, Some(100)));
+            server
+                .roles
+                .insert("role-b".into(), role("role-b", None, Some(500)));
+
+            assert_eq!(
+                server.resolve_max_message_length(&["role-a".into(), "role-b".into()]),
+                Some(Some(500))
+            );
+        }
     }
 }

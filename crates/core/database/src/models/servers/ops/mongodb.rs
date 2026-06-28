@@ -173,6 +173,8 @@ impl IntoDocumentPath for FieldsRole {
         Some(match self {
             FieldsRole::Colour => "colour",
             FieldsRole::Icon => "icon",
+            FieldsRole::Class => "class",
+            FieldsRole::MaxMessageLength => "max_message_length",
         })
     }
 }

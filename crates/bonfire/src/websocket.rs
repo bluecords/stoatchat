@@ -68,6 +68,24 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
     // Split the socket for simultaneously read and write.
     let (mut write, mut read) = ws.split();
 
+    // Reject clients below the configured minimum app version before doing
+    // anything else - same gate as the REST API's `X-Client-Version` check.
+    let min_client_version = revolt_config::config().await.min_client_version.clone();
+    if !revolt_config::client_version_satisfies_minimum(
+        config.get_client_version().as_deref(),
+        min_client_version.as_deref(),
+    ) {
+        write
+            .send(config.encode(&EventV1::Error {
+                data: create_error!(UpgradeRequired {
+                    min_version: min_client_version.unwrap_or_default()
+                }),
+            }))
+            .await
+            .ok();
+        return;
+    }
+
     // If the user has not provided authentication, request information.
     if config.get_session_token().is_none() {
         while let Ok(Some(message)) = read.try_next().await {
