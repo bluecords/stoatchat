@@ -450,6 +450,85 @@ pub struct Settings {
     pub sentry: Sentry,
     pub production: bool,
     pub disable_events_dont_use: bool,
+    /// Minimum supported client app version (semver, e.g. "5.2.0").
+    /// Clients reporting a lower `X-Client-Version` are rejected with 426 Upgrade Required.
+    /// `None` (unset) = no minimum enforced. Set deliberately per-deploy, not bumped automatically.
+    #[serde(default)]
+    pub min_client_version: Option<String>,
+}
+
+/// Returns `false` only when both the configured minimum and the client-reported version
+/// are valid semver and the client's version is strictly below the minimum. A missing or
+/// unparseable client version, or an unset/unparseable minimum, is treated as "unknown" and
+/// allowed through — this gate only blocks clients we can positively confirm are too old.
+pub fn client_version_satisfies_minimum(
+    client_version: Option<&str>,
+    min_version: Option<&str>,
+) -> bool {
+    let Some(min_version) = min_version else {
+        return true;
+    };
+
+    let Ok(min) = semver::Version::parse(min_version) else {
+        return true;
+    };
+
+    let Some(client_version) = client_version else {
+        return true;
+    };
+
+    let Ok(client) = semver::Version::parse(client_version) else {
+        return true;
+    };
+
+    client >= min
+}
+
+#[cfg(test)]
+mod version_gate_tests {
+    use super::client_version_satisfies_minimum;
+
+    #[test]
+    fn below_minimum_is_blocked() {
+        assert!(!client_version_satisfies_minimum(
+            Some("5.1.9"),
+            Some("5.2.0")
+        ));
+    }
+
+    #[test]
+    fn equal_to_minimum_is_allowed() {
+        assert!(client_version_satisfies_minimum(
+            Some("5.2.0"),
+            Some("5.2.0")
+        ));
+    }
+
+    #[test]
+    fn above_minimum_is_allowed() {
+        assert!(client_version_satisfies_minimum(
+            Some("5.3.0"),
+            Some("5.2.0")
+        ));
+    }
+
+    #[test]
+    fn missing_client_header_is_allowed() {
+        assert!(client_version_satisfies_minimum(None, Some("5.2.0")));
+    }
+
+    #[test]
+    fn malformed_client_version_is_allowed() {
+        assert!(client_version_satisfies_minimum(
+            Some("not-a-version"),
+            Some("5.2.0")
+        ));
+    }
+
+    #[test]
+    fn no_minimum_configured_is_allowed() {
+        assert!(client_version_satisfies_minimum(Some("0.0.1"), None));
+    }
 }
 
 impl Settings {

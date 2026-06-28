@@ -32,6 +32,9 @@ async-recursion = "1.0.4"
 # Error Handling
 anyhow = "1.0.100"
 thiserror = "2.0.18"
+
+# Versioning
+semver = "1.0.23"
 sentry = "0.31.5"
 sentry-anyhow = "0.38.1"
 
