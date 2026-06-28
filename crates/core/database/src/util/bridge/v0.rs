@@ -1022,6 +1022,8 @@ impl From<crate::FieldsRole> for FieldsRole {
         match value {
             crate::FieldsRole::Colour => FieldsRole::Colour,
             crate::FieldsRole::Icon => FieldsRole::Icon,
+            crate::FieldsRole::Class => FieldsRole::Class,
+            crate::FieldsRole::MaxMessageLength => FieldsRole::MaxMessageLength,
         }
     }
 }
@@ -1031,6 +1033,8 @@ impl From<FieldsRole> for crate::FieldsRole {
         match value {
             FieldsRole::Colour => crate::FieldsRole::Colour,
             FieldsRole::Icon => crate::FieldsRole::Icon,
+            FieldsRole::Class => crate::FieldsRole::Class,
+            FieldsRole::MaxMessageLength => crate::FieldsRole::MaxMessageLength,
         }
     }
 }

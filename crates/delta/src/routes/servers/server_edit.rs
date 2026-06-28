@@ -47,6 +47,7 @@ pub async fn edit(
         && data.analytics.is_none()
         && data.discoverable.is_none()
         && data.owner.is_none()
+        && data.class_defaults.is_none()
         && data.remove.is_empty()
     {
         return Ok(Json(server.into()));
@@ -59,6 +60,12 @@ pub async fn edit(
         || !data.remove.is_empty()
     {
         permissions.throw_if_lacking_channel_permission(ChannelPermission::ManageServer)?;
+    }
+
+    // Editing class defaults is a permission-config change, same bar as editing
+    // roles/permissions directly.
+    if data.class_defaults.is_some() {
+        permissions.throw_if_lacking_channel_permission(ChannelPermission::ManagePermissions)?;
     }
 
     // Check we are the server owner or privileged if changing sensitive fields
@@ -96,6 +103,7 @@ pub async fn edit(
         discoverable,
         analytics,
         owner,
+        class_defaults,
         remove,
     } = data;
 
@@ -109,6 +117,8 @@ pub async fn edit(
         discoverable,
         analytics,
         owner: owner.clone(),
+        class_defaults: class_defaults
+            .map(|m| m.into_iter().map(|(k, v)| (k, v.into())).collect()),
         ..Default::default()
     };
 

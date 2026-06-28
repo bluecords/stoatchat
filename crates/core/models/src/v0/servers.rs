@@ -168,6 +168,8 @@ auto_derived!(
     pub enum FieldsRole {
         Colour,
         Icon,
+        Class,
+        MaxMessageLength,
     }
 
     /// Channel category
@@ -300,6 +302,12 @@ auto_derived!(
         /// User id of the new owner
         pub owner: Option<String>,
 
+        /// Per-class default permissions - see `Role.class`. Replaces the whole map
+        /// when present (send every class you want to keep, not just the one you're
+        /// changing), since this is meant to be edited as one settings form, not
+        /// merged key-by-key.
+        pub class_defaults: Option<HashMap<RoleClass, ClassDefault>>,
+
         /// Fields to remove from server object
         #[cfg_attr(feature = "serde", serde(default))]
         pub remove: Vec<FieldsServer>,
@@ -328,6 +336,13 @@ auto_derived!(
         /// Provide an Autumn attachment Id.
         #[cfg_attr(feature = "validator", validate(length(min = 1, max = 128)))]
         pub icon: Option<String>,
+        /// Permission class this role belongs to - to unset, add `Class` to `remove`
+        /// instead (omitting/nulling this field, like every other field here, leaves
+        /// the existing value untouched)
+        pub class: Option<RoleClass>,
+        /// Max message length override for this role - to unset, add
+        /// `MaxMessageLength` to `remove`
+        pub max_message_length: Option<u64>,
         /// Fields to remove from role object
         #[cfg_attr(feature = "serde", serde(default))]
         pub remove: Vec<FieldsRole>,

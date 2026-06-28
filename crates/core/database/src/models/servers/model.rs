@@ -210,10 +210,12 @@ auto_derived!(
         Banner,
     }
 
-    /// Optional fields on server object
+    /// Optional fields on role object
     pub enum FieldsRole {
         Colour,
         Icon,
+        Class,
+        MaxMessageLength,
     }
 );
 
@@ -502,6 +504,8 @@ impl Role {
         match field {
             FieldsRole::Colour => self.colour = None,
             FieldsRole::Icon => self.icon = None,
+            FieldsRole::Class => self.class = None,
+            FieldsRole::MaxMessageLength => self.max_message_length = None,
         }
     }
 

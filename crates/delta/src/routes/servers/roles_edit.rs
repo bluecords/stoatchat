@@ -48,6 +48,8 @@ pub async fn edit(
             colour,
             hoist,
             icon,
+            class,
+            max_message_length,
             remove,
             ..
         } = data;
@@ -68,6 +70,8 @@ pub async fn edit(
             colour,
             hoist,
             icon: final_icon,
+            class,
+            max_message_length,
             ..Default::default()
         };
 
