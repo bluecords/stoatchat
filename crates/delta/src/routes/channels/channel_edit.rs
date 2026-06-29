@@ -255,6 +255,67 @@ pub async fn edit(
                 partial.slowmode = Some(new_slowmode);
             }
         }
+        Channel::ForumChannel {
+            id,
+            name,
+            description,
+            icon,
+            nsfw,
+            allowed_tags,
+            solution_enabled,
+            ..
+        } => {
+            if data.remove.contains(&v0::FieldsChannel::Icon) {
+                if let Some(icon) = &icon {
+                    db.mark_attachment_as_deleted(&icon.id).await?;
+                }
+            }
+
+            for field in &data.remove {
+                match field {
+                    v0::FieldsChannel::Description => {
+                        description.take();
+                    }
+                    v0::FieldsChannel::Icon => {
+                        icon.take();
+                    }
+                    v0::FieldsChannel::AllowedTags => {
+                        allowed_tags.take();
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(icon_id) = data.icon {
+                partial.icon = Some(File::use_channel_icon(db, &icon_id, id, &user.id).await?);
+                *icon = partial.icon.clone();
+            }
+
+            if let Some(new_name) = data.name {
+                *name = new_name.clone();
+                partial.name = Some(new_name);
+            }
+
+            if let Some(new_description) = data.description {
+                partial.description = Some(new_description);
+                *description = partial.description.clone();
+            }
+
+            if let Some(new_nsfw) = data.nsfw {
+                *nsfw = new_nsfw;
+                partial.nsfw = Some(new_nsfw);
+            }
+
+            if let Some(new_allowed_tags) = data.allowed_tags {
+                *allowed_tags = Some(new_allowed_tags.clone());
+                partial.allowed_tags = Some(new_allowed_tags);
+            }
+
+            if let Some(new_solution_enabled) = data.solution_enabled {
+                *solution_enabled = new_solution_enabled;
+                partial.solution_enabled = Some(new_solution_enabled);
+            }
+        }
         _ => return Err(create_error!(InvalidOperation)),
     };
 

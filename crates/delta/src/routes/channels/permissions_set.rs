@@ -38,7 +38,9 @@ pub async fn set_role_permissions(
     // (the sibling route) already avoids this by fetching the server
     // independently -- mirrored here. See nac-server#8.
     let server_id = match &channel {
-        Channel::TextChannel { server, .. } => server.clone(),
+        Channel::TextChannel { server, .. } | Channel::ForumChannel { server, .. } => {
+            server.clone()
+        }
         _ => return Err(create_error!(InvalidOperation)),
     };
     let server = Reference::from_unchecked(&server_id).as_server(db).await?;

@@ -157,6 +157,8 @@ impl TestHarness {
                 description: None,
                 nsfw: Some(false),
                 voice: None,
+                allowed_tags: None,
+                solution_enabled: None,
             },
             true,
         )
@@ -187,6 +189,8 @@ impl TestHarness {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(&user.clone().into(&self.db, Some(user)).await),
             Some(user.clone().into(&self.db, Some(user)).await),

@@ -204,6 +204,31 @@ impl From<crate::Channel> for Channel {
                 voice: voice.map(|voice| voice.into()),
                 slowmode,
             },
+            crate::Channel::ForumChannel {
+                id,
+                server,
+                name,
+                description,
+                icon,
+                last_message_id,
+                default_permissions,
+                role_permissions,
+                nsfw,
+                allowed_tags,
+                solution_enabled,
+            } => Channel::ForumChannel {
+                id,
+                server,
+                name,
+                description,
+                icon: icon.map(|file| file.into()),
+                last_message_id,
+                default_permissions,
+                role_permissions,
+                nsfw,
+                allowed_tags,
+                solution_enabled,
+            },
         }
     }
 }
@@ -270,6 +295,31 @@ impl From<Channel> for crate::Channel {
                 voice: voice.map(|voice| voice.into()),
                 slowmode,
             },
+            Channel::ForumChannel {
+                id,
+                server,
+                name,
+                description,
+                icon,
+                last_message_id,
+                default_permissions,
+                role_permissions,
+                nsfw,
+                allowed_tags,
+                solution_enabled,
+            } => crate::Channel::ForumChannel {
+                id,
+                server,
+                name,
+                description,
+                icon: icon.map(|file| file.into()),
+                last_message_id,
+                default_permissions,
+                role_permissions,
+                nsfw,
+                allowed_tags,
+                solution_enabled,
+            },
         }
     }
 }
@@ -289,6 +339,8 @@ impl From<crate::PartialChannel> for PartialChannel {
             last_message_id: value.last_message_id,
             voice: value.voice.map(|voice| voice.into()),
             slowmode: value.slowmode,
+            allowed_tags: value.allowed_tags,
+            solution_enabled: value.solution_enabled,
         }
     }
 }
@@ -308,6 +360,8 @@ impl From<PartialChannel> for crate::PartialChannel {
             last_message_id: value.last_message_id,
             voice: value.voice.map(|voice| voice.into()),
             slowmode: value.slowmode,
+            allowed_tags: value.allowed_tags,
+            solution_enabled: value.solution_enabled,
         }
     }
 }
@@ -319,6 +373,7 @@ impl From<FieldsChannel> for crate::FieldsChannel {
             FieldsChannel::Icon => crate::FieldsChannel::Icon,
             FieldsChannel::DefaultPermissions => crate::FieldsChannel::DefaultPermissions,
             FieldsChannel::Voice => crate::FieldsChannel::Voice,
+            FieldsChannel::AllowedTags => crate::FieldsChannel::AllowedTags,
         }
     }
 }
@@ -330,6 +385,7 @@ impl From<crate::FieldsChannel> for FieldsChannel {
             crate::FieldsChannel::Icon => FieldsChannel::Icon,
             crate::FieldsChannel::DefaultPermissions => FieldsChannel::DefaultPermissions,
             crate::FieldsChannel::Voice => FieldsChannel::Voice,
+            crate::FieldsChannel::AllowedTags => FieldsChannel::AllowedTags,
         }
     }
 }
@@ -482,6 +538,9 @@ impl crate::Message {
             masquerade: self.masquerade.map(Into::into),
             flags: self.flags.unwrap_or_default(),
             pinned: self.pinned,
+            forum_title: self.forum_title,
+            forum_tags: self.forum_tags,
+            forum_solution: self.forum_solution,
         }
     }
 }
@@ -511,6 +570,9 @@ impl From<crate::PartialMessage> for PartialMessage {
             masquerade: value.masquerade.map(Into::into),
             flags: value.flags,
             pinned: value.pinned,
+            forum_title: value.forum_title,
+            forum_tags: value.forum_tags,
+            forum_solution: value.forum_solution,
         }
     }
 }

@@ -273,7 +273,9 @@ impl PermissionQuery for DatabasePermissionQuery<'_> {
                 Cow::Borrowed(Channel::SavedMessages { .. })
                 | Cow::Owned(Channel::SavedMessages { .. }) => ChannelType::SavedMessages,
                 Cow::Borrowed(Channel::TextChannel { .. })
-                | Cow::Owned(Channel::TextChannel { .. }) => ChannelType::ServerChannel,
+                | Cow::Owned(Channel::TextChannel { .. })
+                | Cow::Borrowed(Channel::ForumChannel { .. })
+                | Cow::Owned(Channel::ForumChannel { .. }) => ChannelType::ServerChannel,
             }
         } else {
             ChannelType::Unknown
@@ -297,6 +299,14 @@ impl PermissionQuery for DatabasePermissionQuery<'_> {
                 | Cow::Owned(Channel::TextChannel {
                     default_permissions,
                     ..
+                })
+                | Cow::Borrowed(Channel::ForumChannel {
+                    default_permissions,
+                    ..
+                })
+                | Cow::Owned(Channel::ForumChannel {
+                    default_permissions,
+                    ..
                 }) => default_permissions.unwrap_or_default().into(),
                 _ => Default::default(),
             }
@@ -315,6 +325,16 @@ impl PermissionQuery for DatabasePermissionQuery<'_> {
                     ..
                 })
                 | Cow::Owned(Channel::TextChannel {
+                    id: channel_id,
+                    role_permissions,
+                    ..
+                })
+                | Cow::Borrowed(Channel::ForumChannel {
+                    id: channel_id,
+                    role_permissions,
+                    ..
+                })
+                | Cow::Owned(Channel::ForumChannel {
                     id: channel_id,
                     role_permissions,
                     ..
@@ -414,7 +434,9 @@ impl PermissionQuery for DatabasePermissionQuery<'_> {
             #[allow(deprecated)]
             match channel {
                 Cow::Borrowed(Channel::TextChannel { server, .. })
-                | Cow::Owned(Channel::TextChannel { server, .. }) => {
+                | Cow::Owned(Channel::TextChannel { server, .. })
+                | Cow::Borrowed(Channel::ForumChannel { server, .. })
+                | Cow::Owned(Channel::ForumChannel { server, .. }) => {
                     if let Some(known_server) =
                         // I'm not sure why I can't just pattern match both at once here?
                         // It throws some weird error and the provided fix doesn't work :/

@@ -21,7 +21,7 @@ impl Cache {
     pub async fn can_view_channel(&self, db: &Database, channel: &Channel) -> bool {
         #[allow(deprecated)]
         match &channel {
-            Channel::TextChannel { server, .. } => {
+            Channel::TextChannel { server, .. } | Channel::ForumChannel { server, .. } => {
                 let member = self.members.get(server);
                 let server = self.servers.get(server);
                 let mut query =

@@ -233,6 +233,8 @@ mod test {
                 description: None,
                 nsfw: Some(false),
                 voice: None,
+                allowed_tags: None,
+                solution_enabled: None,
             },
             true,
         )
@@ -268,6 +270,8 @@ mod test {
             last_message_id: None,
             voice: None,
             slowmode: None,
+            allowed_tags: None,
+            solution_enabled: None,
         };
         locked_channel
             .update(&harness.db, partial, vec![])
@@ -296,6 +300,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(&user.clone().into(&harness.db, Some(&user)).await),
             Some(user.clone().into(&harness.db, Some(&user)).await),
@@ -336,6 +342,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(&user.clone().into(&harness.db, Some(&user)).await),
             Some(user.clone().into(&harness.db, Some(&user)).await),
@@ -384,6 +392,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(&user.clone().into(&harness.db, Some(&user)).await),
             Some(user.clone().into(&harness.db, Some(&user)).await),
@@ -430,6 +440,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(&user.clone().into(&harness.db, Some(&user)).await),
             Some(user.clone().into(&harness.db, Some(&user)).await),
@@ -481,6 +493,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(&user.clone().into(&harness.db, Some(&user)).await),
             Some(user.clone().into(&harness.db, Some(&user)).await),
@@ -518,6 +532,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(&user.clone().into(&harness.db, Some(&user)).await),
             Some(user.clone().into(&harness.db, Some(&user)).await),
@@ -549,6 +565,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(&user.clone().into(&harness.db, Some(&user)).await),
             Some(user.clone().into(&harness.db, Some(&user)).await),
@@ -599,6 +617,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(
                 &other_user
@@ -644,6 +664,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(
                 &other_user
@@ -713,6 +735,8 @@ mod test {
                 masquerade: None,
                 interactions: None,
                 flags: None,
+                forum_title: None,
+                forum_tags: None,
             },
             v0::MessageAuthor::User(
                 &other_user

@@ -14,7 +14,7 @@ use validator::HasLen;
 use revolt_result::Result;
 
 use super::DelayedTask;
-use crate::Channel::TextChannel;
+use crate::Channel;
 
 /// Enumeration of possible events
 #[derive(Debug, Eq, PartialEq)]
@@ -195,7 +195,9 @@ pub async fn handle_ack_event(
                     .await
                     .expect("Failed to fetch channel from db");
 
-                if let TextChannel { server, .. } = channel {
+                if let Channel::TextChannel { server, .. } | Channel::ForumChannel { server, .. } =
+                    channel
+                {
                     if let Err(err) = amqp.mass_mention_message_sent(server, mass_mentions).await {
                         revolt_config::capture_error(&err);
                     }

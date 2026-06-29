@@ -80,6 +80,16 @@ auto_derived_partial!(
         /// Bitfield of message flags
         #[serde(skip_serializing_if = "Option::is_none")]
         pub flags: Option<u32>,
+
+        /// Title of this message when it is a forum post (root message in a `ForumChannel`)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub forum_title: Option<String>,
+        /// Tags applied to this message when it is a forum post
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub forum_tags: Option<Vec<String>>,
+        /// Whether this message is marked as the accepted solution to the forum post it replies to
+        #[serde(skip_serializing_if = "crate::if_option_false")]
+        pub forum_solution: Option<bool>,
     },
     "PartialMessage"
 );
@@ -258,6 +268,9 @@ impl Default for Message {
             masquerade: None,
             flags: None,
             pinned: None,
+            forum_title: None,
+            forum_tags: None,
+            forum_solution: None,
         }
     }
 }
@@ -323,6 +336,29 @@ impl Message {
             && (data.embeds.as_ref().is_none_or(|v| v.is_empty()))
         {
             return Err(create_error!(EmptyMessage));
+        }
+
+        // Forum post semantics: `forum_title`/`forum_tags` only make sense on the root
+        // message of a `ForumChannel` post (i.e. a message with no `replies`). A root
+        // post requires a title; a reply must not carry post metadata of its own.
+        let is_reply = data.replies.as_ref().is_some_and(|r| !r.is_empty());
+        match &channel {
+            Channel::ForumChannel { allowed_tags, .. } if !is_reply => {
+                if data.forum_title.as_ref().is_none_or(|t| t.is_empty()) {
+                    return Err(create_error!(InvalidProperty));
+                }
+
+                if let (Some(tags), Some(allowed)) = (&data.forum_tags, allowed_tags) {
+                    if tags.iter().any(|tag| !allowed.contains(tag)) {
+                        return Err(create_error!(InvalidProperty));
+                    }
+                }
+            }
+            _ if data.forum_title.is_some() || data.forum_tags.is_some() => {
+                // Either a reply within a forum channel, or any message outside one.
+                return Err(create_error!(InvalidProperty));
+            }
+            _ => {}
         }
 
         let allow_mass_mentions = allow_mentions && config.features.mass_mentions_enabled;
@@ -394,6 +430,8 @@ impl Message {
             author: author_id,
             webhook: webhook.map(|w| w.into()),
             flags: data.flags,
+            forum_title: data.forum_title,
+            forum_tags: data.forum_tags,
             ..Default::default()
         };
 
@@ -523,7 +561,8 @@ impl Message {
                     user_mentions.retain(|m| recipients_hash.contains(m));
                     role_mentions.clear();
                 }
-                Channel::TextChannel { ref server, .. } => {
+                Channel::TextChannel { ref server, .. }
+                | Channel::ForumChannel { ref server, .. } => {
                     let mentions_vec = Vec::from_iter(user_mentions.iter().cloned());
 
                     let valid_members = db.fetch_members(server.as_str(), &mentions_vec[..]).await;
@@ -743,7 +782,7 @@ impl Message {
                                 .filter(|uid| *uid != author.id())
                                 .cloned()
                                 .collect(),
-                            Channel::TextChannel { .. } => {
+                            Channel::TextChannel { .. } | Channel::ForumChannel { .. } => {
                                 self.mentions.clone().unwrap_or_default()
                             }
                             _ => vec![],
