@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.14.0](https://github.com/bluecords/stoatchat/compare/v0.13.7...v0.14.0) (2026-06-29)
+
+
+### Features
+
+* role classes (Admin/Member/Free) + instance-level min client version gate ([b79d40c](https://github.com/bluecords/stoatchat/commit/b79d40c97a2d6581b3b5fd6032943573e99b1198))
+
+
+### Bug Fixes
+
+* allow true server owner to bypass rank check on channel role-permission overrides ([c18bfa8](https://github.com/bluecords/stoatchat/commit/c18bfa8016954a1c439a07d82b2d2ccd83ddafa2))
+* point docs favicon to correct location ([#789](https://github.com/bluecords/stoatchat/issues/789)) ([bebfe34](https://github.com/bluecords/stoatchat/commit/bebfe349227d8cc555e1b488eb343f2c28b28b88))
+* saving role permissions for privileged/admin users ([#3](https://github.com/bluecords/stoatchat/issues/3)) ([4a4af7d](https://github.com/bluecords/stoatchat/commit/4a4af7de82e21cf40c5c8be4b7df7f628fea42b2))
+* **voice:** raise LiveKit join-token TTL 10s -&gt; 30s for mobile ([484e05f](https://github.com/bluecords/stoatchat/commit/484e05f0b8c36a5a28ae118f92c49c35e43ec316))
+* **voice:** raise LiveKit join-token TTL 30s -&gt; 300s, 30s still too short ([#2](https://github.com/bluecords/stoatchat/issues/2)) ([9c3a871](https://github.com/bluecords/stoatchat/commit/9c3a8719243ea1c3e26a8d48de55c0e5ee7ac605))
+
 ## [0.13.7](https://github.com/stoatchat/stoatchat/compare/v0.13.6...v0.13.7) (2026-05-21)
 
 
