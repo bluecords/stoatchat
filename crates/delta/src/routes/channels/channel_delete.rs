@@ -69,6 +69,10 @@ pub async fn delete(
 
             delete_voice_channel(voice_client, &UserVoiceChannel::from_channel(&channel)).await?;
         }
+        Channel::ForumChannel { .. } => {
+            permissions.throw_if_lacking_channel_permission(ChannelPermission::ManageChannel)?;
+            channel.delete(db).await?;
+        }
     };
 
     Ok(EmptyResponse)

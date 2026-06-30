@@ -98,7 +98,7 @@ impl ApnsOutboundConsumer {
         match &notification.channel {
             Channel::DirectMessage { .. } => notification.author.clone(),
             Channel::Group { name, .. } => format!("{}, #{}", notification.author, name),
-            Channel::TextChannel { name, .. } => {
+            Channel::TextChannel { name, .. } | Channel::ForumChannel { name, .. } => {
                 format!("{} in #{}", notification.author, name)
             }
             _ => "Unknown".to_string(),

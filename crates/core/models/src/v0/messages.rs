@@ -72,6 +72,16 @@ auto_derived_partial!(
         #[serde(skip_serializing_if = "crate::if_option_false")]
         pub pinned: Option<bool>,
 
+        /// Title of this message when it is a forum post (root message in a `ForumChannel`)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub forum_title: Option<String>,
+        /// Tags applied to this message when it is a forum post
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub forum_tags: Option<Vec<String>>,
+        /// Whether this message is marked as the accepted solution to the forum post it replies to
+        #[serde(skip_serializing_if = "crate::if_option_false")]
+        pub forum_solution: Option<bool>,
+
         /// Bitfield of message flags
         ///
         /// https://docs.rs/revolt-models/latest/revolt_models/v0/enum.MessageFlags.html
@@ -282,6 +292,15 @@ auto_derived!(
         ///
         /// https://docs.rs/revolt-models/latest/revolt_models/v0/enum.MessageFlags.html
         pub flags: Option<u32>,
+
+        /// Title for this post, required when sending the root message of a `ForumChannel`
+        /// post. Not valid on a message that itself has `replies` set (i.e. on a reply).
+        #[cfg_attr(feature = "validator", validate(length(min = 1, max = 100)))]
+        pub forum_title: Option<String>,
+        /// Tags for this post, only valid alongside `forum_title`. Must be a subset of the
+        /// forum channel's `allowed_tags`, if any are configured.
+        #[cfg_attr(feature = "validator", validate(length(max = 5)))]
+        pub forum_tags: Option<Vec<String>>,
     }
 
     /// Options for querying messages
@@ -387,6 +406,7 @@ auto_derived!(
     /// Optional fields on message
     pub enum FieldsMessage {
         Pinned,
+        ForumSolution,
     }
 );
 

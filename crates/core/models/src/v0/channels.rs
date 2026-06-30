@@ -117,6 +117,64 @@ auto_derived!(
             #[serde(skip_serializing_if = "Option::is_none")]
             slowmode: Option<u64>,
         },
+        /// Forum channel belonging to a server
+        ///
+        /// Behaves like a text channel for storage/permissions purposes; messages with
+        /// no `replies` are rendered as top-level posts (using their `forum_title` /
+        /// `forum_tags` fields), messages that `replies` to a post are that post's thread.
+        ForumChannel {
+            /// Unique Id
+            #[cfg_attr(feature = "serde", serde(rename = "_id"))]
+            id: String,
+            /// Id of the server this channel belongs to
+            server: String,
+
+            /// Display name of the channel
+            name: String,
+            /// Channel description
+            #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+            description: Option<String>,
+
+            /// Custom icon attachment
+            #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+            icon: Option<File>,
+            /// Id of the last message (post or reply) sent in this channel
+            #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+            last_message_id: Option<String>,
+
+            /// Default permissions assigned to users in this channel
+            #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+            default_permissions: Option<OverrideField>,
+            /// Permissions assigned based on role to this channel
+            #[cfg_attr(
+                feature = "serde",
+                serde(
+                    default = "HashMap::<String, OverrideField>::new",
+                    skip_serializing_if = "HashMap::<String, OverrideField>::is_empty"
+                )
+            )]
+            role_permissions: HashMap<String, OverrideField>,
+
+            /// Whether this channel is marked as not safe for work
+            #[cfg_attr(
+                feature = "serde",
+                serde(skip_serializing_if = "crate::if_false", default)
+            )]
+            nsfw: bool,
+
+            /// Tags posts in this forum channel may be created with
+            ///
+            /// Empty/absent means untagged posts are allowed and no tag set is enforced.
+            #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+            allowed_tags: Option<Vec<String>>,
+
+            /// Whether replies in this forum channel can be marked as the "solution" to a post
+            #[cfg_attr(
+                feature = "serde",
+                serde(skip_serializing_if = "crate::if_false", default)
+            )]
+            solution_enabled: bool,
+        },
     }
 
     /// Voice information for a channel
@@ -156,6 +214,10 @@ auto_derived!(
         pub voice: Option<VoiceInformation>,
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         pub slowmode: Option<u64>,
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+        pub allowed_tags: Option<Vec<String>>,
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+        pub solution_enabled: Option<bool>,
     }
 
     /// Optional fields on channel object
@@ -164,6 +226,7 @@ auto_derived!(
         Icon,
         DefaultPermissions,
         Voice,
+        AllowedTags,
     }
 
     /// New webhook information
@@ -198,6 +261,13 @@ auto_derived!(
         /// The channel's slow mode delay in seconds, up to 6 hours
         #[cfg_attr(feature = "validator", validate(range(min = 0, max = 21600)))]
         pub slowmode: Option<u64>,
+
+        /// Tags posts in this forum channel may be created with (forum channels only)
+        #[cfg_attr(feature = "validator", validate(length(max = 25)))]
+        pub allowed_tags: Option<Vec<String>>,
+
+        /// Whether replies can be marked as the "solution" to a post (forum channels only)
+        pub solution_enabled: Option<bool>,
 
         /// Fields to remove from channel
         #[cfg_attr(feature = "serde", serde(default))]
@@ -236,6 +306,8 @@ auto_derived!(
         Text,
         /// Voice Channel
         Voice,
+        /// Forum Channel
+        Forum,
     }
 
     /// Create new server channel
@@ -258,6 +330,14 @@ auto_derived!(
         /// Voice Information for when this channel is also a voice channel
         #[serde(skip_serializing_if = "Option::is_none")]
         pub voice: Option<VoiceInformation>,
+
+        /// Tags posts in this forum channel may be created with (forum channels only)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub allowed_tags: Option<Vec<String>>,
+
+        /// Whether replies can be marked as the "solution" to a post (forum channels only)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub solution_enabled: Option<bool>,
     }
 
     /// New default permissions
@@ -329,7 +409,8 @@ impl Channel {
             Channel::DirectMessage { id, .. }
             | Channel::Group { id, .. }
             | Channel::SavedMessages { id, .. }
-            | Channel::TextChannel { id, .. } => id,
+            | Channel::TextChannel { id, .. }
+            | Channel::ForumChannel { id, .. } => id,
         }
     }
 
@@ -341,7 +422,9 @@ impl Channel {
         match self {
             Channel::DirectMessage { .. } => None,
             Channel::SavedMessages { .. } => Some("Saved Messages"),
-            Channel::TextChannel { name, .. } | Channel::Group { name, .. } => Some(name),
+            Channel::TextChannel { name, .. }
+            | Channel::Group { name, .. }
+            | Channel::ForumChannel { name, .. } => Some(name),
         }
     }
 }

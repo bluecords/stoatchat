@@ -116,6 +116,49 @@ auto_derived!(
             #[serde(skip_serializing_if = "Option::is_none")]
             slowmode: Option<u64>,
         },
+        /// Forum channel belonging to a server
+        ForumChannel {
+            /// Unique Id
+            #[serde(rename = "_id")]
+            id: String,
+            /// Id of the server this channel belongs to
+            server: String,
+
+            /// Display name of the channel
+            name: String,
+            /// Channel description
+            #[serde(skip_serializing_if = "Option::is_none")]
+            description: Option<String>,
+
+            /// Custom icon attachment
+            #[serde(skip_serializing_if = "Option::is_none")]
+            icon: Option<File>,
+            /// Id of the last message (post or reply) sent in this channel
+            #[serde(skip_serializing_if = "Option::is_none")]
+            last_message_id: Option<String>,
+
+            /// Default permissions assigned to users in this channel
+            #[serde(skip_serializing_if = "Option::is_none")]
+            default_permissions: Option<OverrideField>,
+            /// Permissions assigned based on role to this channel
+            #[serde(
+                default = "HashMap::<String, OverrideField>::new",
+                skip_serializing_if = "HashMap::<String, OverrideField>::is_empty"
+            )]
+            role_permissions: HashMap<String, OverrideField>,
+
+            /// Whether this channel is marked as not safe for work
+            #[serde(skip_serializing_if = "crate::if_false", default)]
+            nsfw: bool,
+
+            /// Tags posts in this forum channel may be created with
+            #[serde(skip_serializing_if = "Option::is_none")]
+            allowed_tags: Option<Vec<String>>,
+
+            /// Whether replies in this forum channel can be marked as the "solution" to a post
+            #[serde(skip_serializing_if = "crate::if_false", default)]
+            solution_enabled: bool,
+        },
     }
 
     #[derive(Default)]
@@ -153,6 +196,10 @@ auto_derived!(
         pub voice: Option<VoiceInformation>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub slowmode: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub allowed_tags: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub solution_enabled: Option<bool>,
     }
 
     /// Optional fields on channel object
@@ -161,6 +208,7 @@ auto_derived!(
         Icon,
         DefaultPermissions,
         Voice,
+        AllowedTags,
     }
 );
 
@@ -227,6 +275,19 @@ impl Channel {
                 nsfw: data.nsfw.unwrap_or(false),
                 voice: Some(data.voice.unwrap_or_default().into()),
                 slowmode: None,
+            },
+            v0::LegacyServerChannelType::Forum => Channel::ForumChannel {
+                id: id.clone(),
+                server: server.id.to_owned(),
+                name: data.name,
+                description: data.description,
+                icon: None,
+                last_message_id: None,
+                default_permissions: None,
+                role_permissions: HashMap::new(),
+                nsfw: data.nsfw.unwrap_or(false),
+                allowed_tags: data.allowed_tags,
+                solution_enabled: data.solution_enabled.unwrap_or(false),
             },
         };
 
@@ -427,14 +488,17 @@ impl Channel {
             Channel::DirectMessage { id, .. }
             | Channel::Group { id, .. }
             | Channel::SavedMessages { id, .. }
-            | Channel::TextChannel { id, .. } => id,
+            | Channel::TextChannel { id, .. }
+            | Channel::ForumChannel { id, .. } => id,
         }
     }
 
     /// Clone this channel's server id
     pub fn server(&self) -> Option<&str> {
         match self {
-            Channel::TextChannel { server, .. } => Some(server),
+            Channel::TextChannel { server, .. } | Channel::ForumChannel { server, .. } => {
+                Some(server)
+            }
             _ => None,
         }
     }
@@ -461,6 +525,12 @@ impl Channel {
     ) -> Result<()> {
         match self {
             Channel::TextChannel {
+                id,
+                server,
+                role_permissions,
+                ..
+            }
+            | Channel::ForumChannel {
                 id,
                 server,
                 role_permissions,
@@ -511,7 +581,9 @@ impl Channel {
             clear: remove.into_iter().map(|v| v.into()).collect(),
         }
         .p(match self {
-            Self::TextChannel { server, .. } => server.clone(),
+            Self::TextChannel { server, .. } | Self::ForumChannel { server, .. } => {
+                server.clone()
+            }
             _ => id,
         })
         .await;
@@ -523,19 +595,27 @@ impl Channel {
     pub fn remove_field(&mut self, field: &FieldsChannel) {
         match field {
             FieldsChannel::Description => match self {
-                Self::Group { description, .. } | Self::TextChannel { description, .. } => {
+                Self::Group { description, .. }
+                | Self::TextChannel { description, .. }
+                | Self::ForumChannel { description, .. } => {
                     description.take();
                 }
                 _ => {}
             },
             FieldsChannel::Icon => match self {
-                Self::Group { icon, .. } | Self::TextChannel { icon, .. } => {
+                Self::Group { icon, .. }
+                | Self::TextChannel { icon, .. }
+                | Self::ForumChannel { icon, .. } => {
                     icon.take();
                 }
                 _ => {}
             },
             FieldsChannel::DefaultPermissions => match self {
                 Self::TextChannel {
+                    default_permissions,
+                    ..
+                }
+                | Self::ForumChannel {
                     default_permissions,
                     ..
                 } => {
@@ -546,6 +626,12 @@ impl Channel {
             FieldsChannel::Voice => match self {
                 Self::TextChannel { voice, .. } => {
                     voice.take();
+                }
+                _ => {}
+            },
+            FieldsChannel::AllowedTags => match self {
+                Self::ForumChannel { allowed_tags, .. } => {
+                    allowed_tags.take();
                 }
                 _ => {}
             },
@@ -638,6 +724,49 @@ impl Channel {
 
                 if let Some(v) = partial.voice {
                     voice.replace(v);
+                }
+            }
+            Self::ForumChannel {
+                name,
+                description,
+                icon,
+                nsfw,
+                default_permissions,
+                role_permissions,
+                allowed_tags,
+                solution_enabled,
+                ..
+            } => {
+                if let Some(v) = partial.name {
+                    *name = v;
+                }
+
+                if let Some(v) = partial.description {
+                    description.replace(v);
+                }
+
+                if let Some(v) = partial.icon {
+                    icon.replace(v);
+                }
+
+                if let Some(v) = partial.nsfw {
+                    *nsfw = v;
+                }
+
+                if let Some(v) = partial.role_permissions {
+                    *role_permissions = v;
+                }
+
+                if let Some(v) = partial.default_permissions {
+                    default_permissions.replace(v);
+                }
+
+                if let Some(v) = partial.allowed_tags {
+                    allowed_tags.replace(v);
+                }
+
+                if let Some(v) = partial.solution_enabled {
+                    *solution_enabled = v;
                 }
             }
         }
@@ -772,6 +901,7 @@ impl IntoDocumentPath for FieldsChannel {
             FieldsChannel::Icon => "icon",
             FieldsChannel::DefaultPermissions => "default_permissions",
             FieldsChannel::Voice => "voice",
+            FieldsChannel::AllowedTags => "allowed_tags",
         })
     }
 }
