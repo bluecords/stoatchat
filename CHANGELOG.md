@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/bluecords/stoatchat/compare/v0.14.0...v0.15.0) (2026-06-30)
+
+
+### Features
+
+* add ForumChannel type with solution marking ([b3fbd9c](https://github.com/bluecords/stoatchat/commit/b3fbd9c494b2066e85cc53a00d830f4d047cd471))
+
 ## [0.14.0](https://github.com/bluecords/stoatchat/compare/v0.13.7...v0.14.0) (2026-06-29)
 
 
