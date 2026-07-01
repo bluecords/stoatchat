@@ -58,6 +58,28 @@ jobs:
       #   run: |
       #     sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
 
+      # Disk safeguard for this persistent self-hosted runner. Its Rust
+      # target/ dir is never garbage-collected and accumulates across runs;
+      # it reached 112G once and filled / to 100%, which crash-looped Mongo
+      # (WiredTiger couldn't write) and wedged RabbitMQ, taking prod down.
+      # If free space on / drops below the threshold, drop the build cache
+      # and prune docker BEFORE building -- a cold rebuild is far cheaper than
+      # a full-disk outage. Runs above the threshold keep the cache untouched,
+      # so normal CI stays incremental and fast. Never removes running
+      # containers or their bind-mounted ./.data (prune -a keeps in-use
+      # images; volumes are untouched without --volumes).
+      - name: Guard against a full disk (prune build cache when low)
+        run: |
+          THRESHOLD_GB=30
+          avail_gb=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+          echo "Free space on /: ${avail_gb}G (prune threshold: ${THRESHOLD_GB}G)"
+          if [ "${avail_gb:-0}" -lt "$THRESHOLD_GB" ]; then
+            echo "Below threshold -- dropping Rust target/ and pruning docker."
+            rm -rf target || true
+            docker system prune -af || true
+            echo "Free space after prune: $(df -BG --output=avail / | tail -1 | tr -dc '0-9')G"
+          fi
+
       - name: Setup Mise
         uses: immich-app/devtools/actions/use-mise@cd24790a7f5f6439ac32cc94f5523cb2de8bfa8c # use-mise-action-v1.1.0
         with:
