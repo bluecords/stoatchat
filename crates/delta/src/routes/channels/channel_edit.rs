@@ -42,6 +42,8 @@ pub async fn edit(
         && data.owner.is_none()
         && data.voice.is_none()
         && data.slowmode.is_none()
+        && data.allowed_tags.is_none()
+        && data.solution_enabled.is_none()
         && data.remove.is_empty()
     {
         return Ok(Json(channel.into()));
