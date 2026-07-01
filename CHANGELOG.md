@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.1](https://github.com/bluecords/stoatchat/compare/v0.15.0...v0.15.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* apply allowed_tags/solution_enabled on forum channel edits ([#13](https://github.com/bluecords/stoatchat/issues/13)) ([071b002](https://github.com/bluecords/stoatchat/commit/071b002daaf50c3c8c91fdb1d4b1294f9fd4c78c))
+
 ## [0.15.0](https://github.com/bluecords/stoatchat/compare/v0.14.0...v0.15.0) (2026-06-30)
 
 
