@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/bluecords/stoatchat/compare/v0.15.1...v0.16.0) (2026-07-01)
+
+
+### Features
+
+* accept forum_tags when editing a forum post ([#16](https://github.com/bluecords/stoatchat/issues/16)) ([414e0fd](https://github.com/bluecords/stoatchat/commit/414e0fda3a403e5ed1e91c4b8e9ab673b7e86c90))
+
 ## [0.15.1](https://github.com/bluecords/stoatchat/compare/v0.15.0...v0.15.1) (2026-07-01)
 
 
