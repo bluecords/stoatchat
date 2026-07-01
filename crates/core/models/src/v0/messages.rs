@@ -369,6 +369,10 @@ auto_derived!(
         /// Embeds to include in the message
         #[cfg_attr(feature = "validator", validate(length(min = 0, max = 10)))]
         pub embeds: Option<Vec<SendableEmbed>>,
+        /// New tags for this forum post. Only valid on the root message of a
+        /// `ForumChannel` post; must be a subset of the channel's `allowed_tags`.
+        /// Pass an empty array to clear all tags.
+        pub forum_tags: Option<Vec<String>>,
     }
 
     /// Options for bulk deleting messages

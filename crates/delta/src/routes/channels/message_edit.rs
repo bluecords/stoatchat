@@ -104,6 +104,30 @@ pub async fn edit(
 
     partial.embeds = Some(new_embeds);
 
+    // 4. Handle forum tag update. Tags belong only to the root post of a
+    //    ForumChannel thread (a message with a forum_title and no replies),
+    //    and must be a subset of the channel's allowed_tags -- same rules the
+    //    create path enforces in Message::create_from_api.
+    if let Some(forum_tags) = edit.forum_tags {
+        match &channel {
+            Channel::ForumChannel { allowed_tags, .. } => {
+                let is_reply = message.replies.as_ref().is_some_and(|r| !r.is_empty());
+                if is_reply || message.forum_title.is_none() {
+                    return Err(create_error!(InvalidProperty));
+                }
+
+                if let Some(allowed) = allowed_tags {
+                    if forum_tags.iter().any(|tag| !allowed.contains(tag)) {
+                        return Err(create_error!(InvalidProperty));
+                    }
+                }
+
+                partial.forum_tags = Some(forum_tags);
+            }
+            _ => return Err(create_error!(InvalidProperty)),
+        }
+    }
+
     message.update(db, partial, vec![]).await?;
 
     // Queue up a task for processing embeds if the we have sufficient permissions
