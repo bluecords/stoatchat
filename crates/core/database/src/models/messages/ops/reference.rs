@@ -190,6 +190,23 @@ impl AbstractMessages for ReferenceDb {
         try_join_all(ids.iter().map(|id| self.fetch_message(id))).await
     }
 
+    /// Count replies per forum post in a channel
+    async fn fetch_forum_reply_counts(&self, channel: &str) -> Result<HashMap<String, i64>> {
+        let messages = self.messages.lock().await;
+        let mut counts: HashMap<String, i64> = HashMap::new();
+        for message in messages.values() {
+            if message.channel != channel {
+                continue;
+            }
+            if let Some(replies) = &message.replies {
+                for reply_id in replies {
+                    *counts.entry(reply_id.clone()).or_default() += 1;
+                }
+            }
+        }
+        Ok(counts)
+    }
+
     /// Update a given message with new information
     async fn update_message(&self, id: &str, message: &PartialMessage, remove: Vec<FieldsMessage>) -> Result<()> {
         let mut messages = self.messages.lock().await;

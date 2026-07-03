@@ -43,6 +43,7 @@ pub async fn query(
         sort,
         nearby,
         include_users,
+        forum_root,
     } = options;
 
     Message::fetch_with_users(
@@ -50,6 +51,7 @@ pub async fn query(
         MessageQuery {
             filter: MessageFilter {
                 channel: Some(channel.id().to_string()),
+                forum_root,
                 ..Default::default()
             },
             time_period: if let Some(nearby) = nearby {
