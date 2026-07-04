@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/bluecords/stoatchat/compare/v0.16.0...v0.17.0) (2026-07-04)
+
+
+### Features
+
+* add server-to-server sponsor role grant/revoke endpoint ([#19](https://github.com/bluecords/stoatchat/issues/19)) ([b5e49f6](https://github.com/bluecords/stoatchat/commit/b5e49f64cb706cc2b2e27ddbe4b7781fbdb9ea8a))
+
 ## [0.16.0](https://github.com/bluecords/stoatchat/compare/v0.15.1...v0.16.0) (2026-07-01)
 
 
