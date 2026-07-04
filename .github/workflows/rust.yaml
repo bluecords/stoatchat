@@ -103,37 +103,3 @@ jobs:
         run: |
           mise test
 
-      - name: Start API in background
-        if: github.event_name != 'pull_request' && github.ref_name == 'main'
-        env:
-          TEST_DB: REFERENCE
-        run: |
-          mise build --bin revolt-delta && (mise service:api &)
-
-      - name: Wait for API to go up
-        if: github.event_name != 'pull_request' && github.ref_name == 'main'
-        uses: nev7n/wait_for_response@7fef3c1a6e8939d0b09062f14fec50d3c5d15fa1 # v1.0.1
-        with:
-          url: "http://localhost:14702/"
-
-      - name: Checkout API repository
-        if: github.event_name != 'pull_request' && github.ref_name == 'main'
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          repository: stoatchat/javascript-client-api
-          path: api
-          ssh-key: ${{ secrets.DEPLOY_KEY_JAVASCRIPT_CLIENT_API }}
-
-      - name: Download OpenAPI specification
-        if: github.event_name != 'pull_request' && github.ref_name == 'main'
-        run: curl http://localhost:14702/openapi.json -o api/OpenAPI.json
-
-      - name: Commit changes
-        if: github.event_name != 'pull_request' && github.ref_name == 'main'
-        uses: EndBug/add-and-commit@a94899bca583c204427a224a7af87c02f9b325d5 # v9.1.4
-        with:
-          cwd: "api"
-          add: "*.json"
-          author_name: Stoat CI
-          author_email: stoat-ci@users.noreply.github.com
-          message: "chore: generate OpenAPI specification"
