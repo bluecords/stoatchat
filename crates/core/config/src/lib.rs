@@ -455,6 +455,11 @@ pub struct Settings {
     /// `None` (unset) = no minimum enforced. Set deliberately per-deploy, not bumped automatically.
     #[serde(default)]
     pub min_client_version: Option<String>,
+    /// Shared secret for the `/sponsor/role` server-to-server endpoint (n8n calls this to
+    /// grant/revoke sponsor roles after a FossBilling payment). Sent as `X-Sponsor-Secret`.
+    /// `None` (unset) = endpoint refuses all requests.
+    #[serde(default)]
+    pub sponsor_webhook_secret: Option<String>,
 }
 
 /// Returns `false` only when both the configured minimum and the client-reported version
