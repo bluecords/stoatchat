@@ -200,6 +200,8 @@ auto_derived!(
         pub query: Option<String>,
         /// Search for pinned
         pub pinned: Option<bool>,
+        /// Only forum root posts (messages that carry a `forum_title`)
+        pub forum_root: Option<bool>,
     }
 
     /// Message Query

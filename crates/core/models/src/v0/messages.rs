@@ -329,6 +329,8 @@ auto_derived!(
         pub nearby: Option<String>,
         /// Whether to include user (and member, if server channel) objects
         pub include_users: Option<bool>,
+        /// Only return forum root posts (messages that carry a `forum_title`)
+        pub forum_root: Option<bool>,
     }
 
     /// Options for searching for messages
