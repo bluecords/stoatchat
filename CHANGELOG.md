@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/bluecords/stoatchat/compare/v0.17.0...v0.17.1) (2026-07-08)
+
+
+### Bug Fixes
+
+* recover AMQP connection after RabbitMQ broker restart ([#22](https://github.com/bluecords/stoatchat/issues/22)) ([0055823](https://github.com/bluecords/stoatchat/commit/0055823f6faa4e62bb39683134a405d0709c78d0))
+
 ## [0.17.0](https://github.com/bluecords/stoatchat/compare/v0.16.0...v0.17.0) (2026-07-04)
 
 
