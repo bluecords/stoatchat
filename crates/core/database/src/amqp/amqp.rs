@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use crate::events::rabbit::*;
 use crate::User;
+use async_lock::RwLock;
 use lapin::{
     options::BasicPublishOptions,
     protocol::basic::AMQPProperties,
-    types::{AMQPValue, FieldTable},
-    Channel, Connection, ConnectionProperties, Error as AMQPError,
+    types::ShortString,
+    Connection, ConnectionProperties, Error as AMQPError,
 };
 use revolt_models::v0::PushNotification;
 use revolt_presence::filter_online;
@@ -15,39 +16,40 @@ use revolt_result::Result;
 
 use serde_json::to_string;
 
+/// Publisher for RabbitMQ.
+///
+/// The connection is held behind interior mutability so it can be replaced if
+/// the broker bounces underneath us: lapin does not auto-recover, so a broker
+/// restart while this process stays up otherwise leaves every publish failing
+/// with `InvalidChannelState(Closed, ...)` until the process is restarted by
+/// hand. Channels are created fresh per publish (they are cheap and our
+/// ack/notification volume is low) rather than cached, which is what previously
+/// went permanently stale after a restart.
 #[derive(Clone)]
 pub struct AMQP {
-    friend_request_accepted: Arc<Channel>,
-    friend_request_received: Arc<Channel>,
-    generic_message: Arc<Channel>,
-    message_sent: Arc<Channel>,
-    mass_mention_message_sent: Arc<Channel>,
-    ack_notification_message: Arc<Channel>,
-    dm_call_updated: Arc<Channel>,
-    process_ack: Arc<Channel>,
-    #[allow(unused)]
-    connection: Arc<Connection>,
+    connection: Arc<RwLock<Arc<Connection>>>,
 }
 
 impl AMQP {
     pub async fn new(connection: Arc<Connection>) -> Self {
         Self {
-            friend_request_accepted: Self::create_channel(&connection).await,
-            friend_request_received: Self::create_channel(&connection).await,
-            generic_message: Self::create_channel(&connection).await,
-            message_sent: Self::create_channel(&connection).await,
-            mass_mention_message_sent: Self::create_channel(&connection).await,
-            ack_notification_message: Self::create_channel(&connection).await,
-            dm_call_updated: Self::create_channel(&connection).await,
-            process_ack: Self::create_channel(&connection).await,
-            connection,
+            connection: Arc::new(RwLock::new(connection)),
         }
     }
 
     pub async fn new_auto() -> Self {
+        let connection = Self::open_connection()
+            .await
+            .expect("Failed to connect to RabbitMQ");
+
+        Self::new(connection).await
+    }
+
+    /// Open a fresh connection to RabbitMQ using the configured credentials.
+    async fn open_connection() -> Result<Arc<Connection>, AMQPError> {
         let config = revolt_config::config().await;
 
-        let connection = Arc::new(
+        Ok(Arc::new(
             Connection::connect(
                 &format!(
                     "amqp://{}:{}@{}:{}",
@@ -58,20 +60,67 @@ impl AMQP {
                 ),
                 ConnectionProperties::default(),
             )
-            .await
-            .expect("Failed to connect to RabbitMQ"),
-        );
-
-        Self::new(connection).await
+            .await?,
+        ))
     }
 
-    async fn create_channel(connection: &Connection) -> Arc<Channel> {
-        Arc::new(
-            connection
-                .create_channel()
-                .await
-                .expect("Failed to create channel"),
-        )
+    /// Publish a payload, recovering the connection once if the broker has
+    /// bounced. The retry is safe because re-declaration is idempotent and the
+    /// publish itself is the only side effect.
+    async fn publish(
+        &self,
+        exchange: ShortString,
+        routing_key: ShortString,
+        payload: &[u8],
+    ) -> Result<(), AMQPError> {
+        match self.try_publish(&exchange, &routing_key, payload).await {
+            Ok(()) => Ok(()),
+            Err(err) => {
+                warn!("AMQP publish failed ({err:?}); reconnecting and retrying once");
+                self.recover().await?;
+                self.try_publish(&exchange, &routing_key, payload).await
+            }
+        }
+    }
+
+    /// A single publish attempt on a freshly-created channel from the live
+    /// connection.
+    async fn try_publish(
+        &self,
+        exchange: &ShortString,
+        routing_key: &ShortString,
+        payload: &[u8],
+    ) -> Result<(), AMQPError> {
+        let connection = { self.connection.read().await.clone() };
+        let channel = connection.create_channel().await?;
+
+        channel
+            .basic_publish(
+                exchange.clone(),
+                routing_key.clone(),
+                BasicPublishOptions::default(),
+                payload,
+                AMQPProperties::default()
+                    .with_content_type("application/json".into())
+                    .with_delivery_mode(2),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    /// Replace the cached connection with a fresh one, unless another task has
+    /// already reconnected (avoids a reconnect stampede when many publishes fail
+    /// at once).
+    async fn recover(&self) -> Result<(), AMQPError> {
+        let mut guard = self.connection.write().await;
+
+        if guard.status().connected() {
+            return Ok(());
+        }
+
+        *guard = Self::open_connection().await?;
+        Ok(())
     }
 
     pub async fn friend_request_accepted(
@@ -92,19 +141,12 @@ impl AMQP {
             payload
         );
 
-        self.friend_request_accepted
-            .basic_publish(
-                config.pushd.exchange.clone().into(),
-                config.pushd.get_fr_accepted_routing_key().into(),
-                BasicPublishOptions::default(),
-                payload.as_bytes(),
-                AMQPProperties::default()
-                    .with_content_type("application/json".into())
-                    .with_delivery_mode(2),
-            )
-            .await?;
-
-        Ok(())
+        self.publish(
+            config.pushd.exchange.clone().into(),
+            config.pushd.get_fr_accepted_routing_key().into(),
+            payload.as_bytes(),
+        )
+        .await
     }
 
     pub async fn friend_request_received(
@@ -125,19 +167,12 @@ impl AMQP {
             payload
         );
 
-        self.friend_request_received
-            .basic_publish(
-                config.pushd.exchange.clone().into(),
-                config.pushd.get_fr_received_routing_key().into(),
-                BasicPublishOptions::default(),
-                payload.as_bytes(),
-                AMQPProperties::default()
-                    .with_content_type("application/json".into())
-                    .with_delivery_mode(2),
-            )
-            .await?;
-
-        Ok(())
+        self.publish(
+            config.pushd.exchange.clone().into(),
+            config.pushd.get_fr_received_routing_key().into(),
+            payload.as_bytes(),
+        )
+        .await
     }
 
     pub async fn generic_message(
@@ -162,19 +197,12 @@ impl AMQP {
             payload
         );
 
-        self.generic_message
-            .basic_publish(
-                config.pushd.exchange.clone().into(),
-                config.pushd.get_generic_routing_key().into(),
-                BasicPublishOptions::default(),
-                payload.as_bytes(),
-                AMQPProperties::default()
-                    .with_content_type("application/json".into())
-                    .with_delivery_mode(2),
-            )
-            .await?;
-
-        Ok(())
+        self.publish(
+            config.pushd.exchange.clone().into(),
+            config.pushd.get_generic_routing_key().into(),
+            payload.as_bytes(),
+        )
+        .await
     }
 
     pub async fn message_sent(
@@ -205,19 +233,12 @@ impl AMQP {
             payload
         );
 
-        self.message_sent
-            .basic_publish(
-                config.pushd.exchange.clone().into(),
-                config.pushd.get_message_routing_key().into(),
-                BasicPublishOptions::default(),
-                payload.as_bytes(),
-                AMQPProperties::default()
-                    .with_content_type("application/json".into())
-                    .with_delivery_mode(2),
-            )
-            .await?;
-
-        Ok(())
+        self.publish(
+            config.pushd.exchange.clone().into(),
+            config.pushd.get_message_routing_key().into(),
+            payload.as_bytes(),
+        )
+        .await
     }
 
     pub async fn mass_mention_message_sent(
@@ -240,19 +261,12 @@ impl AMQP {
             routing_key, payload
         );
 
-        self.mass_mention_message_sent
-            .basic_publish(
-                config.pushd.exchange.clone().into(),
-                routing_key.into(),
-                BasicPublishOptions::default(),
-                payload.as_bytes(),
-                AMQPProperties::default()
-                    .with_content_type("application/json".into())
-                    .with_delivery_mode(2),
-            )
-            .await?;
-
-        Ok(())
+        self.publish(
+            config.pushd.exchange.clone().into(),
+            routing_key.into(),
+            payload.as_bytes(),
+        )
+        .await
     }
 
     /// # Sends an ack to pushd to update badges on iPhones.
@@ -277,25 +291,12 @@ impl AMQP {
             config.pushd.ack_queue, payload
         );
 
-        let mut headers = FieldTable::default();
-        headers.insert(
-            "x-deduplication-header".into(),
-            AMQPValue::LongString(format!("{}-{}", &user_id, &channel_id).into()),
-        );
-
-        self.ack_notification_message
-            .basic_publish(
-                config.pushd.exchange.clone().into(),
-                config.pushd.ack_queue.into(),
-                BasicPublishOptions::default(),
-                payload.as_bytes(),
-                AMQPProperties::default()
-                    .with_content_type("application/json".into())
-                    .with_delivery_mode(2),
-            )
-            .await?;
-
-        Ok(())
+        self.publish(
+            config.pushd.exchange.clone().into(),
+            config.pushd.ack_queue.clone().into(),
+            payload.as_bytes(),
+        )
+        .await
     }
 
     /// # DM Call Update
@@ -329,19 +330,12 @@ impl AMQP {
             payload
         );
 
-        self.dm_call_updated
-            .basic_publish(
-                config.pushd.exchange.clone().into(),
-                config.pushd.get_dm_call_routing_key().into(),
-                BasicPublishOptions::default(),
-                payload.as_bytes(),
-                AMQPProperties::default()
-                    .with_content_type("application/json".into())
-                    .with_delivery_mode(2),
-            )
-            .await?;
-
-        Ok(())
+        self.publish(
+            config.pushd.exchange.clone().into(),
+            config.pushd.get_dm_call_routing_key().into(),
+            payload.as_bytes(),
+        )
+        .await
     }
 
     /// # Send an ack to crond for processing
@@ -365,18 +359,11 @@ impl AMQP {
             config.rabbit.default_exchange, config.rabbit.queues.acks, payload
         );
 
-        self.process_ack
-            .basic_publish(
-                config.rabbit.default_exchange.clone().into(),
-                config.rabbit.queues.acks.into(),
-                BasicPublishOptions::default(),
-                payload.as_bytes(),
-                AMQPProperties::default()
-                    .with_content_type("application/json".into())
-                    .with_delivery_mode(2),
-            )
-            .await?;
-
-        Ok(())
+        self.publish(
+            config.rabbit.default_exchange.clone().into(),
+            config.rabbit.queues.acks.clone().into(),
+            payload.as_bytes(),
+        )
+        .await
     }
 }
