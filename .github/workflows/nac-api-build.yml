@@ -1,11 +1,12 @@
 name: Build NAC API (patched)
 
-# Builds the custom bluecords/api + bluecords/events images from this fork
+# Builds the custom bluecords/{api,events,crond,pushd} images from this fork
 # and publishes them under the REAL release-please version number - not a
 # nickname tag. The root Dockerfile compiles the Rust workspace (where NAC
-# patches live); crates/delta/Dockerfile and crates/bonfire/Dockerfile bundle
-# the resulting binaries into distroless and we push them to
-# ghcr.io/bluecords/{api,events}.
+# patches live); crates/delta/Dockerfile, crates/bonfire/Dockerfile,
+# crates/daemons/crond/Dockerfile, and crates/daemons/pushd/Dockerfile each
+# bundle one resulting binary into distroless and we push them to
+# ghcr.io/bluecords/{api,events,crond,pushd}.
 #
 # Runs on a standard GitHub runner (the upstream workflow needs a self-hosted
 # arc-runner-set the fork doesn't have). Single-arch amd64 (matches the Linode).
@@ -20,6 +21,12 @@ name: Build NAC API (patched)
 # bump you approve), and tags images with that exact version - so updating
 # nac-server's compose.yml to the new version is what triggers the deploy,
 # every time, with no silent skips possible.
+#
+# 2026-07-12 - extended to also build crond + pushd (nac-server#19): both
+# previously ran upstream ghcr.io/stoatchat/* images, so the AMQP
+# consumer-reconnect fix landing in crond/pushd source didn't ship until we
+# owned the build for them too. Same base image, same distroless pattern as
+# api/events - just two more Dockerfiles.
 
 on:
   workflow_dispatch:
@@ -95,3 +102,23 @@ jobs:
           docker push ghcr.io/bluecords/events:${{ steps.tag.outputs.tag }}
           docker push ghcr.io/bluecords/events:latest
           echo "Pushed ghcr.io/bluecords/events:${{ steps.tag.outputs.tag }} (+ :latest)"
+
+      - name: Build & push crond image
+        run: |
+          DOCKER_BUILDKIT=1 docker build \
+            -t ghcr.io/bluecords/crond:${{ steps.tag.outputs.tag }} \
+            -t ghcr.io/bluecords/crond:latest \
+            -f crates/daemons/crond/Dockerfile .
+          docker push ghcr.io/bluecords/crond:${{ steps.tag.outputs.tag }}
+          docker push ghcr.io/bluecords/crond:latest
+          echo "Pushed ghcr.io/bluecords/crond:${{ steps.tag.outputs.tag }} (+ :latest)"
+
+      - name: Build & push pushd image
+        run: |
+          DOCKER_BUILDKIT=1 docker build \
+            -t ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }} \
+            -t ghcr.io/bluecords/pushd:latest \
+            -f crates/daemons/pushd/Dockerfile .
+          docker push ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }}
+          docker push ghcr.io/bluecords/pushd:latest
+          echo "Pushed ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }} (+ :latest)"
