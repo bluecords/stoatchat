@@ -22,63 +22,44 @@ env:
 jobs:
   check:
     name: Rust project
-    # Was arc-runner-set, which no runner in this org actually serves (see
-    # nac-server#8 / PR #3 commit history) -- now served by a dedicated
-    # self-hosted runner registered with this specific label, deliberately
-    # NOT "arc-runner-set", so it can never be matched to docker.yaml's much
-    # heavier multi-arch base-image build job. That job OOM-killed this same
-    # box (8GB RAM) once already when the runner briefly shared the
-    # arc-runner-set label with it.
-    runs-on: bluecords-stoatchat-rust
+    # Moved off the self-hosted bluecords-stoatchat-rust runner (2026-07-13):
+    # that runner lived on the same 8GB prod Linode box as NAC's live backend
+    # (RabbitMQ/Mongo/API/etc), and its build/test load was directly
+    # correlated with real prod CPU/swap CRITICAL alerts (concurrent Rust
+    # build+test+docs+lint batches lining up with alert timestamps to the
+    # minute). It's also the same runner whose unbounded target/ dir once hit
+    # 112G and took prod down (see the disk-guard step this replaced).
+    # ubuntu-latest is free and unmetered on this repo since bluecords/stoatchat
+    # is public, and every other workflow in this repo already uses it -- this
+    # was the one holdout. Trade-off: no more warm cross-run build cache or
+    # persistent local Mongo/Rabbit/MinIO containers, since hosted runners are
+    # ephemeral -- restored below via actions/cache instead.
+    runs-on: ubuntu-latest
     steps:
-      # MongoDB's (and RabbitMQ's) containers run as root and write into
-      # bind-mounted ./.data/* on the host, owned by root. Fix ownership so
-      # checkout doesn't hard-fail on permission-denied -- but the deeper
-      # issue is `clean: true` (checkout's default): it runs `git clean
-      # -ffdx`, which deletes *all* untracked/gitignored files, including
-      # .data (it's in .gitignore). Docker compose containers (MinIO,
-      # Mongo, Rabbit) persist across job runs on this runner and are NOT
-      # stopped between them, so the default clean checkout deletes a
-      # *live* container's bind-mounted volume out from under it on every
-      # single run -- confirmed tonight: chowning .data made it deletable,
-      # which let checkout's clean step actually succeed at wiping MinIO's
-      # volume each time, repeatedly breaking it (drives-online: 0) even
-      # after manually recovering it in between. `clean: false` stops
-      # checkout from touching anything outside what git itself tracks.
-      - name: Fix ownership of root-owned docker data from previous run
-        run: sudo chown -R "$(id -u):$(id -g)" ./.data 2>/dev/null || true
-
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           persist-credentials: false
-          clean: false
 
-      # Using our own runners for now:
-      # - name: Free up disk space
-      #   run: |
-      #     sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
-
-      # Disk safeguard for this persistent self-hosted runner. Its Rust
-      # target/ dir is never garbage-collected and accumulates across runs;
-      # it reached 112G once and filled / to 100%, which crash-looped Mongo
-      # (WiredTiger couldn't write) and wedged RabbitMQ, taking prod down.
-      # If free space on / drops below the threshold, drop the build cache
-      # and prune docker BEFORE building -- a cold rebuild is far cheaper than
-      # a full-disk outage. Runs above the threshold keep the cache untouched,
-      # so normal CI stays incremental and fast. Never removes running
-      # containers or their bind-mounted ./.data (prune -a keeps in-use
-      # images; volumes are untouched without --volumes).
-      - name: Guard against a full disk (prune build cache when low)
+      # Hosted runners ship with SDKs (Android/.NET/Haskell) this project
+      # never uses -- free the space up front for the Rust build/docker pull.
+      - name: Free up disk space
         run: |
-          THRESHOLD_GB=30
-          avail_gb=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
-          echo "Free space on /: ${avail_gb}G (prune threshold: ${THRESHOLD_GB}G)"
-          if [ "${avail_gb:-0}" -lt "$THRESHOLD_GB" ]; then
-            echo "Below threshold -- dropping Rust target/ and pruning docker."
-            rm -rf target || true
-            docker system prune -af || true
-            echo "Free space after prune: $(df -BG --output=avail / | tail -1 | tr -dc '0-9')G"
-          fi
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+
+      # Ephemeral runner = no cross-run persistence, so restore the Rust
+      # build cache explicitly instead. Keyed on Cargo.lock so a dependency
+      # change invalidates it; restore-keys falls back to the last cache on
+      # this branch for a still-mostly-warm build otherwise.
+      - name: Cache cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
 
       - name: Setup Mise
         uses: immich-app/devtools/actions/use-mise@cd24790a7f5f6439ac32cc94f5523cb2de8bfa8c # use-mise-action-v1.1.0
