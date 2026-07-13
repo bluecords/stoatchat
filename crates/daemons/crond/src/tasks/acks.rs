@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use futures_lite::stream::StreamExt;
 use lapin::{
     options::*,
@@ -5,14 +7,45 @@ use lapin::{
     uri::{AMQPAuthority, AMQPQueryString, AMQPUri, AMQPUserInfo},
     ConnectionBuilder, ConnectionProperties, ExchangeKind,
 };
-use log::{debug, info};
+use log::{debug, info, warn};
 use redis_kiss::{get_connection, AsyncCommands, Conn as RedisConnection};
 use revolt_config::config;
 use revolt_database::{events::rabbit::AckEventPayload, Database, AMQP};
 use revolt_result::{Result, ToRevoltError};
 use serde_json;
 
+const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
+const MAX_BACKOFF: Duration = Duration::from_secs(30);
+const STABLE_CONNECTION_THRESHOLD: Duration = Duration::from_secs(30);
+
+/// Runs the ack consumer forever, reconnecting with capped exponential backoff
+/// whenever the connection drops or the delivery stream ends (both happen
+/// silently on a broker bounce - lapin does not auto-recover consumers).
 pub async fn task(db: Database, amqp: AMQP) -> Result<()> {
+    let mut backoff = INITIAL_BACKOFF;
+
+    loop {
+        let started_at = Instant::now();
+
+        match run_consumer(&db, &amqp).await {
+            Ok(()) => warn!("Ack consumer stream ended (likely a broker restart); reconnecting"),
+            Err(e) => warn!("Ack consumer failed to (re)connect: {e:?}; reconnecting"),
+        }
+
+        backoff = if started_at.elapsed() >= STABLE_CONNECTION_THRESHOLD {
+            INITIAL_BACKOFF
+        } else {
+            (backoff * 2).min(MAX_BACKOFF)
+        };
+
+        tokio::time::sleep(backoff).await;
+    }
+}
+
+/// Connect, (re)declare topology, and consume until the connection dies or
+/// the delivery stream ends. Re-declaration is idempotent, so this is safe to
+/// call repeatedly.
+async fn run_consumer(db: &Database, amqp: &AMQP) -> lapin::Result<()> {
     let config = config().await;
 
     let mut redis = get_connection()
@@ -33,18 +66,13 @@ pub async fn task(db: Database, amqp: AMQP) -> Result<()> {
         query: AMQPQueryString::default(),
     };
 
-    let connection = ConnectionBuilder::new()
-        .expect("Builder")
+    let connection = ConnectionBuilder::new()?
         .with_uri(uri)
         .with_properties(ConnectionProperties::default())
         .connect()
-        .await
-        .expect("Failed to connect to rabbitmq");
+        .await?;
 
-    let reader_channel = connection
-        .create_channel()
-        .await
-        .expect("Failed to create channel");
+    let reader_channel = connection.create_channel().await?;
 
     reader_channel
         .exchange_declare(
@@ -56,8 +84,7 @@ pub async fn task(db: Database, amqp: AMQP) -> Result<()> {
             },
             FieldTable::default(),
         )
-        .await
-        .expect("Failed to declare exchange");
+        .await?;
 
     reader_channel
         .queue_declare(
@@ -68,8 +95,7 @@ pub async fn task(db: Database, amqp: AMQP) -> Result<()> {
             },
             FieldTable::default(),
         )
-        .await
-        .expect("Failed to bind queue");
+        .await?;
 
     reader_channel
         .queue_bind(
@@ -79,8 +105,7 @@ pub async fn task(db: Database, amqp: AMQP) -> Result<()> {
             QueueBindOptions::default(),
             FieldTable::default(),
         )
-        .await
-        .expect("Failed to bind channel");
+        .await?;
 
     let mut consumer = reader_channel
         .basic_consume(
@@ -89,8 +114,9 @@ pub async fn task(db: Database, amqp: AMQP) -> Result<()> {
             BasicConsumeOptions::default(),
             FieldTable::default(),
         )
-        .await
-        .expect("Failed to create consumer");
+        .await?;
+
+    info!("Ack consumer connected and consuming");
 
     while let Some(delivery) = consumer.next().await {
         if let Ok(delivery) = delivery {
@@ -100,8 +126,8 @@ pub async fn task(db: Database, amqp: AMQP) -> Result<()> {
                 debug!("Received ack event: {payload:?}");
 
                 if let Err(e) = process_channel_ack(
-                    &db,
-                    &amqp,
+                    db,
+                    amqp,
                     payload.user_id,
                     payload.channel_id.unwrap(),
                     &mut redis,
@@ -121,6 +147,7 @@ pub async fn task(db: Database, amqp: AMQP) -> Result<()> {
             }
         }
     }
+
     Ok(())
 }
 

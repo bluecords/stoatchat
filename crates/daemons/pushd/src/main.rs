@@ -1,7 +1,10 @@
 #[macro_use]
 extern crate log;
 
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use lapin::{
     options::{BasicConsumeOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions},
@@ -10,7 +13,7 @@ use lapin::{
 };
 use revolt_config::{config, Settings};
 use revolt_database::Database;
-use tokio::signal::ctrl_c;
+use tokio::{signal::ctrl_c, time::sleep};
 
 mod consumers;
 mod utils;
@@ -24,6 +27,11 @@ use consumers::{
 };
 
 use crate::utils::{Consumer, Delegate};
+
+const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
+const MAX_BACKOFF: Duration = Duration::from_secs(30);
+const STABLE_CONNECTION_THRESHOLD: Duration = Duration::from_secs(30);
+const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() {
@@ -44,6 +52,68 @@ async fn main() {
         panic!("Mongo is not in use, can't connect via authifier!")
     }
 
+    // Reconnect loop: (re)connect to RabbitMQ and (re)declare all consumers
+    // whenever the connection drops - lapin does not auto-recover, so a
+    // broker bounce otherwise leaves every consumer permanently dead with no
+    // error and no indication anything is wrong.
+    let mut backoff = INITIAL_BACKOFF;
+
+    loop {
+        let connect_started_at = Instant::now();
+
+        let (connection, channels) = tokio::select! {
+            biased;
+            _ = ctrl_c() => return,
+            result = connect_and_consume(&db, &authifier) => match result {
+                Ok(v) => v,
+                Err(e) => {
+                    warn!("pushd failed to connect to RabbitMQ: {e:?}; retrying in {backoff:?}");
+                    tokio::select! {
+                        biased;
+                        _ = ctrl_c() => return,
+                        _ = sleep(backoff) => {}
+                    }
+                    backoff = (backoff * 2).min(MAX_BACKOFF);
+                    continue;
+                }
+            },
+        };
+
+        info!("pushd connected to RabbitMQ and consuming");
+
+        loop {
+            tokio::select! {
+                biased;
+                _ = ctrl_c() => {
+                    for channel in &channels {
+                        let _ = channel.close(0, "close".into()).await;
+                    }
+                    return;
+                }
+                _ = sleep(HEALTH_CHECK_INTERVAL) => {
+                    if !connection.status().connected() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        warn!("RabbitMQ connection lost; reconnecting");
+
+        backoff = if connect_started_at.elapsed() >= STABLE_CONNECTION_THRESHOLD {
+            INITIAL_BACKOFF
+        } else {
+            (backoff * 2).min(MAX_BACKOFF)
+        };
+    }
+}
+
+/// Connect to RabbitMQ and (re)declare every inbound/outbound consumer.
+/// Re-declaration is idempotent, so this is safe to call repeatedly.
+async fn connect_and_consume(
+    db: &Database,
+    authifier_db: &authifier::Database,
+) -> lapin::Result<(Arc<Connection>, Vec<Arc<Channel>>)> {
     let config = config().await;
 
     let connection = Arc::new(
@@ -57,8 +127,7 @@ async fn main() {
             ),
             ConnectionProperties::default(),
         )
-        .await
-        .expect("Failed to connect to RabbitMQ"),
+        .await?,
     );
 
     let mut channels = Vec::new();
@@ -74,94 +143,94 @@ async fn main() {
 
     channels.push(
         make_queue_and_consume::<GenericConsumer>(
-            &db,
-            &authifier,
+            db,
+            authifier_db,
             &connection,
             &config,
             &config.pushd.generic_queue,
             &config.pushd.get_generic_routing_key(),
             None,
         )
-        .await,
+        .await?,
     );
 
     channels.push(
         make_queue_and_consume::<MessageConsumer>(
-            &db,
-            &authifier,
+            db,
+            authifier_db,
             &connection,
             &config,
             &config.pushd.message_queue,
             &config.pushd.get_message_routing_key(),
             None,
         )
-        .await,
+        .await?,
     );
 
     channels.push(
         make_queue_and_consume::<FRReceivedConsumer>(
-            &db,
-            &authifier,
+            db,
+            authifier_db,
             &connection,
             &config,
             &config.pushd.fr_received_queue,
             &config.pushd.get_fr_received_routing_key(),
             None,
         )
-        .await,
+        .await?,
     );
 
     channels.push(
         make_queue_and_consume::<FRAcceptedConsumer>(
-            &db,
-            &authifier,
+            db,
+            authifier_db,
             &connection,
             &config,
             &config.pushd.fr_accepted_queue,
             &config.pushd.get_fr_accepted_routing_key(),
             None,
         )
-        .await,
+        .await?,
     );
 
     channels.push(
         make_queue_and_consume::<MassMessageConsumer>(
-            &db,
-            &authifier,
+            db,
+            authifier_db,
             &connection,
             &config,
             &config.pushd.mass_mention_queue,
             &config.pushd.get_mass_mention_routing_key(),
             None,
         )
-        .await,
+        .await?,
     );
 
     channels.push(
         make_queue_and_consume::<DmCallConsumer>(
-            &db,
-            &authifier,
+            db,
+            authifier_db,
             &connection,
             &config,
             &config.pushd.dm_call_queue,
             &config.pushd.get_dm_call_routing_key(),
             None,
         )
-        .await,
+        .await?,
     );
 
     if !config.pushd.apn.pkcs8.is_empty() {
         channels.push(
             make_queue_and_consume::<ApnsOutboundConsumer>(
-                &db,
-                &authifier,
+                db,
+                authifier_db,
                 &connection,
                 &config,
                 &config.pushd.apn.queue,
                 &config.pushd.apn.queue,
                 None,
             )
-            .await,
+            .await?,
         );
 
         let mut table = FieldTable::default();
@@ -169,53 +238,49 @@ async fn main() {
 
         channels.push(
             make_queue_and_consume::<AckConsumer>(
-                &db,
-                &authifier,
+                db,
+                authifier_db,
                 &connection,
                 &config,
                 &config.pushd.ack_queue,
                 &config.pushd.ack_queue,
                 Some(table),
             )
-            .await,
+            .await?,
         );
     }
 
     if !config.pushd.fcm.auth_uri.is_empty() {
         channels.push(
             make_queue_and_consume::<FcmOutboundConsumer>(
-                &db,
-                &authifier,
+                db,
+                authifier_db,
                 &connection,
                 &config,
                 &config.pushd.fcm.queue,
                 &config.pushd.fcm.queue,
                 None,
             )
-            .await,
+            .await?,
         );
     }
 
     if !config.pushd.vapid.public_key.is_empty() {
         channels.push(
             make_queue_and_consume::<VapidOutboundConsumer>(
-                &db,
-                &authifier,
+                db,
+                authifier_db,
                 &connection,
                 &config,
                 &config.pushd.vapid.queue,
                 &config.pushd.vapid.queue,
                 None,
             )
-            .await,
+            .await?,
         );
     }
 
-    ctrl_c().await.unwrap();
-
-    for channel in channels {
-        let _ = channel.close(0, "close".into()).await;
-    }
+    Ok((connection, channels))
 }
 
 async fn make_queue_and_consume<F>(
@@ -226,11 +291,11 @@ async fn make_queue_and_consume<F>(
     queue_name: &str,
     routing_key: &str,
     queue_args: Option<FieldTable>,
-) -> Arc<Channel>
+) -> lapin::Result<Arc<Channel>>
 where
     F: Consumer,
 {
-    let channel = Arc::new(connection.create_channel().await.unwrap());
+    let channel = Arc::new(connection.create_channel().await?);
 
     channel
         .exchange_declare(
@@ -242,8 +307,7 @@ where
             },
             FieldTable::default(),
         )
-        .await
-        .expect("Failed to declare exchange");
+        .await?;
 
     let mut queue_name = queue_name.to_string();
 
@@ -262,8 +326,7 @@ where
 
     channel
         .queue_declare(queue_name.into(), args, queue_args.unwrap_or_default())
-        .await
-        .unwrap();
+        .await?;
 
     channel
         .queue_bind(
@@ -273,10 +336,7 @@ where
             QueueBindOptions::default(),
             FieldTable::default(),
         )
-        .await
-        .expect(
-            "This probably means the revolt.notifications exchange does not exist in rabbitmq!",
-        );
+        .await?;
 
     let consumer = channel
         .basic_consume(
@@ -288,8 +348,7 @@ where
             },
             FieldTable::default(),
         )
-        .await
-        .unwrap();
+        .await?;
     info!(
         "Consuming routing key {} as queue {}, tag {}",
         routing_key,
@@ -309,5 +368,5 @@ where
 
     consumer.set_delegate(delegate);
 
-    channel
+    Ok(channel)
 }
