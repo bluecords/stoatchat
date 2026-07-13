@@ -40,9 +40,12 @@ jobs:
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
 
       # Ephemeral runner = no cross-run persistence, so restore the Rust
-      # build cache explicitly instead. Keyed on Cargo.lock so a dependency
-      # change invalidates it; restore-keys falls back to the last cache on
-      # this branch for a still-mostly-warm build otherwise.
+      # build cache explicitly instead. Keyed on the root Cargo.lock (exact
+      # path, not a **/ glob) so a dependency change invalidates it without
+      # the hash step having to walk the whole tree -- a recursive glob here
+      # fails outright once the docker-backed test containers below create
+      # root-owned files under .data/, which the runner user can't read.
+      # restore-keys falls back to the last cache on this branch otherwise.
       - name: Cache cargo registry + build artifacts
         uses: actions/cache@v4
         with:
@@ -50,7 +53,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
 
