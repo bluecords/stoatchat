@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/bluecords/stoatchat/compare/v0.17.1...v0.17.2) (2026-07-13)
+
+
+### Bug Fixes
+
+* reconnect crond/pushd AMQP consumers after broker restart ([#26](https://github.com/bluecords/stoatchat/issues/26)) ([f01822a](https://github.com/bluecords/stoatchat/commit/f01822a9d40a66fda0465d111f1e942a5d637b5e))
+
 ## [0.17.1](https://github.com/bluecords/stoatchat/compare/v0.17.0...v0.17.1) (2026-07-08)
 
 
