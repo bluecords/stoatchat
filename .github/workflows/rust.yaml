@@ -22,18 +22,11 @@ env:
 jobs:
   check:
     name: Rust project
-    # Moved off the self-hosted bluecords-stoatchat-rust runner (2026-07-13):
-    # that runner lived on the same 8GB prod Linode box as NAC's live backend
-    # (RabbitMQ/Mongo/API/etc), and its build/test load was directly
-    # correlated with real prod CPU/swap CRITICAL alerts (concurrent Rust
-    # build+test+docs+lint batches lining up with alert timestamps to the
-    # minute). It's also the same runner whose unbounded target/ dir once hit
-    # 112G and took prod down (see the disk-guard step this replaced).
-    # ubuntu-latest is free and unmetered on this repo since bluecords/stoatchat
-    # is public, and every other workflow in this repo already uses it -- this
-    # was the one holdout. Trade-off: no more warm cross-run build cache or
-    # persistent local Mongo/Rabbit/MinIO containers, since hosted runners are
-    # ephemeral -- restored below via actions/cache instead.
+    # Moved off the self-hosted runner (2026-07-13) to a hosted one -- free/
+    # unmetered on this public repo, and matches every other workflow here.
+    # See internal infra notes for the full rationale. Trade-off: no more
+    # warm cross-run build cache, since hosted runners are ephemeral --
+    # restored below via actions/cache instead.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
