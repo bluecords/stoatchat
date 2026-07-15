@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::events::rabbit::*;
 use crate::User;
@@ -38,11 +39,24 @@ impl AMQP {
     }
 
     pub async fn new_auto() -> Self {
-        let connection = Self::open_connection()
-            .await
-            .expect("Failed to connect to RabbitMQ");
+        // Retry with capped backoff instead of panicking if the broker isn't
+        // reachable the instant this process starts. Every caller (delta/api,
+        // crond, voice-ingress) is a long-running service that otherwise hard-
+        // crashes on a startup race and recovers only via the container
+        // `restart` policy - a crash-loop, not graceful handling. lapin does
+        // not retry the initial connect on its own.
+        let mut backoff = Duration::from_secs(1);
 
-        Self::new(connection).await
+        loop {
+            match Self::open_connection().await {
+                Ok(connection) => return Self::new(connection).await,
+                Err(err) => {
+                    warn!("Failed to connect to RabbitMQ at startup ({err:?}); retrying in {backoff:?}");
+                    async_std::task::sleep(backoff).await;
+                    backoff = (backoff * 2).min(Duration::from_secs(30));
+                }
+            }
+        }
     }
 
     /// Open a fresh connection to RabbitMQ using the configured credentials.
