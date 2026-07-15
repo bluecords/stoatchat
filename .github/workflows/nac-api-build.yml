@@ -76,6 +76,19 @@ jobs:
         id: tag
         run: echo "tag=${{ github.event.release.tag_name || inputs.tag }}" >> "$GITHUB_OUTPUT"
 
+      - name: Sync Cargo.lock to the release version bump
+        # release-please bumps every crate's version in Cargo.toml, but the
+        # matching Cargo.lock update can be missing from the merged release
+        # commit: release-please's own lock-sync step runs in a separate job that
+        # `concurrency: cancel-in-progress` cancels when the release PR is merged
+        # moments after the fix PR (exactly what broke the v0.17.2 image build -
+        # `cargo build --locked` below then fails on the stale lock). `cargo
+        # update --workspace` re-pins ONLY the workspace member versions, never
+        # external deps (verified: it reports the 200+ deps as unchanged), so the
+        # in-Docker `--locked` build can no longer fail on this race. No-op when
+        # the lock is already correct.
+        run: cargo update --workspace
+
       - name: Build base image (compiles Rust workspace incl. NAC patches)
         run: |
           DOCKER_BUILDKIT=1 docker build \
