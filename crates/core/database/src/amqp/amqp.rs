@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::events::rabbit::*;
 use crate::User;
@@ -38,11 +39,24 @@ impl AMQP {
     }
 
     pub async fn new_auto() -> Self {
-        let connection = Self::open_connection()
-            .await
-            .expect("Failed to connect to RabbitMQ");
+        // Retry with capped backoff instead of panicking if the broker isn't
+        // reachable the instant this process starts. Every caller (delta/api,
+        // crond, voice-ingress) is a long-running service that otherwise hard-
+        // crashes on a startup race and recovers only via the container
+        // `restart` policy - a crash-loop, not graceful handling. lapin does
+        // not retry the initial connect on its own.
+        let mut backoff = Duration::from_secs(1);
 
-        Self::new(connection).await
+        loop {
+            match Self::open_connection().await {
+                Ok(connection) => return Self::new(connection).await,
+                Err(err) => {
+                    warn!("Failed to connect to RabbitMQ at startup ({err:?}); retrying in {backoff:?}");
+                    async_std::task::sleep(backoff).await;
+                    backoff = (backoff * 2).min(Duration::from_secs(30));
+                }
+            }
+        }
     }
 
     /// Open a fresh connection to RabbitMQ using the configured credentials.
@@ -365,5 +379,36 @@ impl AMQP {
             payload.as_bytes(),
         )
         .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for the startup panic (bluecords/stoatchat#30):
+    /// `new_auto()` must retry a broker that isn't reachable yet, not panic on
+    /// the first failed connect. Points RabbitMQ at a port with nothing
+    /// listening and asserts `new_auto()` is still retrying after a few seconds.
+    /// The pre-fix code called `.expect()` and panicked almost immediately,
+    /// which would abort this test.
+    ///
+    /// Run in isolation (`cargo test -p revolt-database new_auto_retries`) so the
+    /// process-global config picks up the env overrides set here before any
+    /// other test builds it.
+    #[async_std::test]
+    async fn new_auto_retries_instead_of_panicking_when_broker_down() {
+        std::env::set_var("REVOLT__RABBIT__HOST", "127.0.0.1");
+        std::env::set_var("REVOLT__RABBIT__PORT", "5699"); // nothing listens here
+        std::env::set_var("REVOLT__RABBIT__USERNAME", "guest");
+        std::env::set_var("REVOLT__RABBIT__PASSWORD", "guest");
+
+        let result = async_std::future::timeout(Duration::from_secs(3), AMQP::new_auto()).await;
+
+        assert!(
+            result.is_err(),
+            "new_auto() should still be retrying a down broker after 3s, \
+             but it returned or panicked"
+        );
     }
 }
