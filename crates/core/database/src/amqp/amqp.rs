@@ -381,3 +381,34 @@ impl AMQP {
         .await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for the startup panic (bluecords/stoatchat#30):
+    /// `new_auto()` must retry a broker that isn't reachable yet, not panic on
+    /// the first failed connect. Points RabbitMQ at a port with nothing
+    /// listening and asserts `new_auto()` is still retrying after a few seconds.
+    /// The pre-fix code called `.expect()` and panicked almost immediately,
+    /// which would abort this test.
+    ///
+    /// Run in isolation (`cargo test -p revolt-database new_auto_retries`) so the
+    /// process-global config picks up the env overrides set here before any
+    /// other test builds it.
+    #[async_std::test]
+    async fn new_auto_retries_instead_of_panicking_when_broker_down() {
+        std::env::set_var("REVOLT__RABBIT__HOST", "127.0.0.1");
+        std::env::set_var("REVOLT__RABBIT__PORT", "5699"); // nothing listens here
+        std::env::set_var("REVOLT__RABBIT__USERNAME", "guest");
+        std::env::set_var("REVOLT__RABBIT__PASSWORD", "guest");
+
+        let result = async_std::future::timeout(Duration::from_secs(3), AMQP::new_auto()).await;
+
+        assert!(
+            result.is_err(),
+            "new_auto() should still be retrying a down broker after 3s, \
+             but it returned or panicked"
+        );
+    }
+}
