@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/bluecords/stoatchat/compare/v0.17.2...v0.17.3) (2026-07-15)
+
+
+### Bug Fixes
+
+* retry AMQP connect at startup instead of panicking ([#30](https://github.com/bluecords/stoatchat/issues/30)) ([352379e](https://github.com/bluecords/stoatchat/commit/352379e564854f7b998bb548853c6c8793a63ed5))
+
 ## [0.17.2](https://github.com/bluecords/stoatchat/compare/v0.17.1...v0.17.2) (2026-07-13)
 
 
