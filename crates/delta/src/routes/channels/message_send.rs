@@ -278,7 +278,7 @@ mod test {
             .await
             .expect("Failed to update the channel permissions for special role");
 
-        Member::create(&harness.db, &server, &user, Some(channels.clone()))
+        Member::create(&harness.db, &server, &user, Some(channels.clone()), None)
             .await
             .expect("Failed to create member");
         let member = Reference::from_unchecked(&user.id)
@@ -320,7 +320,7 @@ mod test {
             "Mention failed to be scrubbed when the user is not part of the server"
         );
 
-        Member::create(&harness.db, &server, &second_user, Some(channels.clone()))
+        Member::create(&harness.db, &server, &second_user, Some(channels.clone()), None)
             .await
             .expect("Failed to create second member");
         let mut second_member = Reference::from_unchecked(&second_user.id)
@@ -598,7 +598,7 @@ mod test {
                 }),
             )
             .await;
-        let (mut other_member, _) = Member::create(&harness.db, &server, &other_user, None)
+        let (mut other_member, _) = Member::create(&harness.db, &server, &other_user, None, None)
             .await
             .expect("Failed to add test member");
 

@@ -100,11 +100,15 @@ impl Default for Member {
 #[allow(clippy::disallowed_methods)]
 impl Member {
     /// Create a new member in a server
+    /// `invited_by` is the id of the user whose invite was used, when the join
+    /// came from one. It is recorded on the join system message so admins can
+    /// see who vouched for a new arrival without having to ask.
     pub async fn create(
         db: &Database,
         server: &Server,
         user: &User,
         channels: Option<Vec<Channel>>,
+        invited_by: Option<String>,
     ) -> Result<(Member, Vec<Channel>)> {
         if db.fetch_ban(&server.id, &user.id).await.is_ok() {
             return Err(create_error!(Banned));
@@ -114,11 +118,22 @@ impl Member {
             return Err(create_error!(AlreadyInServer));
         }
 
+        // Land new members in the server's configured holding role, if it still
+        // exists. Checking against `server.roles` keeps a stale id (role deleted
+        // after being configured) from writing a dangling role onto the member.
+        let default_roles = server
+            .default_member_role
+            .as_ref()
+            .filter(|role_id| server.roles.contains_key(*role_id))
+            .map(|role_id| vec![role_id.to_string()])
+            .unwrap_or_default();
+
         let mut member = Member {
             id: MemberCompositeKey {
                 server: server.id.to_string(),
                 user: user.id.to_string(),
             },
+            roles: default_roles,
             ..Default::default()
         };
 
@@ -190,6 +205,7 @@ impl Member {
         {
             SystemMessage::UserJoined {
                 id: user.id.clone(),
+                by: invited_by,
             }
             .into_message(id.to_string())
             .send_without_notifications(db, None, None, false, false, false)
@@ -343,8 +359,8 @@ mod tests {
             .unwrap()
             .0;
 
-            Member::create(&db, &server, &owner, None).await.unwrap();
-            let mut kickable_member = Member::create(&db, &server, &kickable_user, None)
+            Member::create(&db, &server, &owner, None, None).await.unwrap();
+            let mut kickable_member = Member::create(&db, &server, &kickable_user, None, None)
                 .await
                 .unwrap()
                 .0;
@@ -368,7 +384,7 @@ mod tests {
                 .await
                 .unwrap();
 
-            let kickable_member = Member::create(&db, &server, &kickable_user, None)
+            let kickable_member = Member::create(&db, &server, &kickable_user, None, None)
                 .await
                 .unwrap()
                 .0;

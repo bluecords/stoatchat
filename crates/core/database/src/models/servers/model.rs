@@ -55,6 +55,15 @@ auto_derived_partial!(
         )]
         pub class_defaults: HashMap<RoleClass, ClassDefault>,
 
+        /// Role automatically granted to members when they join.
+        ///
+        /// Lets a server land new arrivals in a holding role (e.g. "Pending") so an
+        /// admin grants real privileges deliberately, rather than every join starting
+        /// with no roles at all. Optional: unset means join with no roles, which is
+        /// the historical behaviour, so existing servers need no migration.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub default_member_role: Option<String>,
+
         /// Icon attachment
         #[serde(skip_serializing_if = "Option::is_none")]
         pub icon: Option<File>,
@@ -287,6 +296,7 @@ impl Server {
             icon: None,
             roles: HashMap::new(),
             class_defaults: HashMap::new(),
+            default_member_role: None,
             system_messages: None,
         };
 

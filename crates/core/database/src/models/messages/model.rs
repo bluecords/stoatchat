@@ -105,7 +105,12 @@ auto_derived!(
         #[serde(rename = "user_remove")]
         UserRemove { id: String, by: String },
         #[serde(rename = "user_joined")]
-        UserJoined { id: String },
+        UserJoined {
+            id: String,
+            /// Id of the user whose invite was used to join, when known.
+            #[serde(skip_serializing_if = "Option::is_none")]
+            by: Option<String>,
+        },
         #[serde(rename = "user_left")]
         UserLeft { id: String },
         #[serde(rename = "user_kicked")]
