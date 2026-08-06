@@ -591,7 +591,7 @@ impl From<crate::SystemMessage> for SystemMessage {
             crate::SystemMessage::Text { content } => Self::Text { content },
             crate::SystemMessage::UserAdded { id, by } => Self::UserAdded { id, by },
             crate::SystemMessage::UserBanned { id } => Self::UserBanned { id },
-            crate::SystemMessage::UserJoined { id } => Self::UserJoined { id },
+            crate::SystemMessage::UserJoined { id, by } => Self::UserJoined { id, by },
             crate::SystemMessage::UserKicked { id } => Self::UserKicked { id },
             crate::SystemMessage::UserLeft { id } => Self::UserLeft { id },
             crate::SystemMessage::UserRemove { id, by } => Self::UserRemove { id, by },
@@ -887,6 +887,9 @@ impl From<Server> for crate::Server {
             nsfw: value.nsfw,
             analytics: value.analytics,
             discoverable: value.discoverable,
+            // Internal-only field: the v0 API model can't express it, so an
+            // inbound conversion has nothing to carry over.
+            default_member_role: None,
         }
     }
 }
@@ -945,6 +948,9 @@ impl From<PartialServer> for crate::PartialServer {
             nsfw: value.nsfw,
             analytics: value.analytics,
             discoverable: value.discoverable,
+            // None means "leave unchanged" for a partial update, which is the
+            // right behaviour for a field the v0 API cannot set.
+            default_member_role: None,
         }
     }
 }

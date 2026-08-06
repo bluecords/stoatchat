@@ -91,7 +91,7 @@ mod test {
 
         let channel = &channels[0];
 
-        Member::create(&harness.db, &server, &user, Some(channels.clone()))
+        Member::create(&harness.db, &server, &user, Some(channels.clone()), None)
             .await
             .expect("Failed to create member");
         let member = Reference::from_unchecked(&user.id)
