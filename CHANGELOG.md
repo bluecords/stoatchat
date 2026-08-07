@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/bluecords/stoatchat/compare/v0.17.3...v0.18.0) (2026-08-07)
+
+
+### Features
+
+* record who invited a new member, and land joins in a holding role ([#33](https://github.com/bluecords/stoatchat/issues/33)) ([777e1a7](https://github.com/bluecords/stoatchat/commit/777e1a7647945c650844bfc6aeb0799767a37030))
+
+
+### Bug Fixes
+
+* complete default_member_role rollout to test helpers, and allow manual Rust CI runs ([#35](https://github.com/bluecords/stoatchat/issues/35)) ([d914b82](https://github.com/bluecords/stoatchat/commit/d914b827a148ea4b2f75146b2c0c6d551569d7b5))
+
 ## [0.17.3](https://github.com/bluecords/stoatchat/compare/v0.17.2...v0.17.3) (2026-07-15)
 
 
