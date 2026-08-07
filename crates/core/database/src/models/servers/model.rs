@@ -607,6 +607,7 @@ mod tests {
                 roles: HashMap::from([(role.id.clone(), role)]),
                 default_permissions: 0,
                 class_defaults: HashMap::new(),
+                default_member_role: None,
                 icon: None,
                 banner: None,
                 flags: None,

@@ -607,6 +607,7 @@ mod resolve_override_tests {
             roles: HashMap::new(),
             default_permissions: 0,
             class_defaults,
+            default_member_role: None,
             icon: None,
             banner: None,
             flags: None,
