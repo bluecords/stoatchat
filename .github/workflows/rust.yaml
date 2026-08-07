@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Lets this workflow be started by hand. During the 2026-08-06 GitHub Actions
+  # incident, webhook-triggered events (push, pull_request) were throttled for
+  # hours while workflow_dispatch kept working -- nac-web could be rebuilt that
+  # way, but this workflow could not, so a merged change sat unverified. It also
+  # gives a way to re-run against main without pushing an empty commit.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.head_ref || github.ref }}
