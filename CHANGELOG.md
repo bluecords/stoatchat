@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/bluecords/stoatchat/compare/v0.19.0...v0.19.1) (2026-08-15)
+
+
+### Bug Fixes
+
+* link the suspension email to NAC's own community guidelines ([#38](https://github.com/bluecords/stoatchat/issues/38)) ([08e5e88](https://github.com/bluecords/stoatchat/commit/08e5e887e177f7a73f25d2c0fb3fca60983c7532))
+
 ## [0.19.0](https://github.com/bluecords/stoatchat/compare/v0.18.0...v0.19.0) (2026-08-15)
 
 
