@@ -755,10 +755,16 @@ impl User {
                 smtp.send_email(
                     account.email.clone(),
                     // maybe move this to common area?
+                    // NOTE: this one never went through the `config.production` switch
+                    // in drivers/mod.rs - it was hardcoded to the Stoat-branded pair, so
+                    // a suspended NAC member received Revolt Platforms Ltd's company
+                    // details and a link to stoat.chat's community guidelines, i.e. was
+                    // pointed at a stranger's rules to explain our moderation decision.
+                    // Now NAC's own copy, text-only to match every other account email.
                     &Template {
                         title: "Account Suspension".to_string(),
-                        html: Some(include_str!("../../../templates/suspension.html").to_owned()),
-                        text: include_str!("../../../templates/suspension.txt").to_owned(),
+                        html: None,
+                        text: include_str!("../../../templates/suspension.nac.txt").to_owned(),
                         url: Default::default(),
                     },
                     json!({
