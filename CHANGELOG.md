@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/bluecords/stoatchat/compare/v0.18.0...v0.19.0) (2026-08-15)
+
+
+### Features
+
+* send NAC's own email copy, not Stoat/Revolt branding ([#36](https://github.com/bluecords/stoatchat/issues/36)) ([7608525](https://github.com/bluecords/stoatchat/commit/76085255e67efd91d3c4d34e3df6b1121a03033b))
+
 ## [0.18.0](https://github.com/bluecords/stoatchat/compare/v0.17.3...v0.18.0) (2026-08-07)
 
 
