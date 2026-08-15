@@ -1,0 +1,11 @@
+Your account has been suspended, for one or more reasons:
+{{list}}
+
+You will be able to use your account again in {{duration}} days.
+
+Further violations may result in a permanent ban depending on severity, please abide by the NAC Community Guidelines.
+
+Ban evasion is prohibited and will be dealt with accordingly.
+
+This email is intended for {{email}}
+Sent by NAC - https://community.nac.social

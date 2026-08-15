@@ -149,66 +149,48 @@ impl Database {
                         expire_password_reset: 3600 * 24,
                         expire_account_deletion: 3600 * 24,
                     },
-                    templates: if config.production {
-                        Templates {
-                            verify: Template {
-                                title: "Verify your Stoat account.".into(),
-                                text: include_str!("../../templates/verify.txt").into(),
-                                url: format!("{}/login/verify/", config.hosts.app),
-                                html: Some(include_str!("../../templates/verify.html").into()),
-                            },
-                            reset: Template {
-                                title: "Reset your Stoat password.".into(),
-                                text: include_str!("../../templates/reset.txt").into(),
-                                url: format!("{}/login/reset/", config.hosts.app),
-                                html: Some(include_str!("../../templates/reset.html").into()),
-                            },
-                            reset_existing: Template {
-                                title: "You already have a Stoat account, reset your password."
-                                    .into(),
-                                text: include_str!("../../templates/reset-existing.txt").into(),
-                                url: format!("{}/login/reset/", config.hosts.app),
-                                html: Some(
-                                    include_str!("../../templates/reset-existing.html").into(),
-                                ),
-                            },
-                            deletion: Template {
-                                title: "Confirm account deletion.".into(),
-                                text: include_str!("../../templates/deletion.txt").into(),
-                                url: format!("{}/delete/", config.hosts.app),
-                                html: Some(include_str!("../../templates/deletion.html").into()),
-                            },
-                            welcome: None,
-                        }
-                    } else {
-                        Templates {
-                            verify: Template {
-                                title: "Verify your account.".into(),
-                                text: include_str!("../../templates/verify.whitelabel.txt").into(),
-                                url: format!("{}/login/verify/", config.hosts.app),
-                                html: None,
-                            },
-                            reset: Template {
-                                title: "Reset your password.".into(),
-                                text: include_str!("../../templates/reset.whitelabel.txt").into(),
-                                url: format!("{}/login/reset/", config.hosts.app),
-                                html: None,
-                            },
-                            reset_existing: Template {
-                                title: "Reset your password.".into(),
-                                text: include_str!("../../templates/reset.whitelabel.txt").into(),
-                                url: format!("{}/login/reset/", config.hosts.app),
-                                html: None,
-                            },
-                            deletion: Template {
-                                title: "Confirm account deletion.".into(),
-                                text: include_str!("../../templates/deletion.whitelabel.txt")
-                                    .into(),
-                                url: format!("{}/delete/", config.hosts.app),
-                                html: None,
-                            },
-                            welcome: None,
-                        }
+                    // NAC's own email copy. Upstream branched on `config.production`
+                    // here: true picked Stoat-branded templates (subject lines saying
+                    // "your Stoat account", an HTML part, and a footer carrying Revolt
+                    // Platforms Ltd's UK company registration and registered office);
+                    // false picked "whitelabel" ones that still ended with "This email
+                    // has no association with Stoat or Revolt Platforms Ltd." plus a
+                    // link to developers.stoat.chat.
+                    //
+                    // NAC only ever hit the second branch - `production` defaults to
+                    // false and the auto-detect in revolt-config only flips it for
+                    // revolt.chat/stoat.chat hosts - so members were getting that
+                    // disclaimer on every verification and password-reset mail.
+                    //
+                    // The branch is collapsed rather than just repointed so there is no
+                    // configuration that can put someone else's branding back into our
+                    // members' inboxes. Text-only, matching what NAC already sent.
+                    templates: Templates {
+                        verify: Template {
+                            title: "Verify your NAC account.".into(),
+                            text: include_str!("../../templates/verify.nac.txt").into(),
+                            url: format!("{}/login/verify/", config.hosts.app),
+                            html: None,
+                        },
+                        reset: Template {
+                            title: "Reset your NAC password.".into(),
+                            text: include_str!("../../templates/reset.nac.txt").into(),
+                            url: format!("{}/login/reset/", config.hosts.app),
+                            html: None,
+                        },
+                        reset_existing: Template {
+                            title: "You already have a NAC account, reset your password.".into(),
+                            text: include_str!("../../templates/reset.nac.txt").into(),
+                            url: format!("{}/login/reset/", config.hosts.app),
+                            html: None,
+                        },
+                        deletion: Template {
+                            title: "Confirm account deletion.".into(),
+                            text: include_str!("../../templates/deletion.nac.txt").into(),
+                            url: format!("{}/delete/", config.hosts.app),
+                            html: None,
+                        },
+                        welcome: None,
                     },
                 }
             } else {
