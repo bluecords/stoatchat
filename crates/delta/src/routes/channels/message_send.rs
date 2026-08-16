@@ -160,6 +160,17 @@ pub async fn message_send(
     let author: v0::User = user.clone().into(db, Some(&user)).await;
 
     // Make sure we have server member (edge case if server owner)
+    //
+    // `are_we_a_member` can only load the member if the query already knows which
+    // server the channel belongs to, and for PRIVILEGED users it does not:
+    // `calculate_channel_permissions` returns early for them BEFORE the
+    // ChannelType::ServerChannel arm that calls `set_server_from_channel`. So the
+    // member stayed None and the role-aware message length cap in
+    // `Message::create_from_api` silently fell back to the account-tier default -
+    // meaning a privileged user got the LOWEST cap in the server, because being
+    // privileged skips the very lookup that would raise it. Idempotent when the
+    // server is already known.
+    query.set_server_from_channel().await;
     query.are_we_a_member().await;
 
     // Create model user / members
