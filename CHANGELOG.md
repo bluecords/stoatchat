@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/bluecords/stoatchat/compare/v0.19.1...v0.19.2) (2026-08-22)
+
+
+### Bug Fixes
+
+* privileged users were getting the LOWEST message length cap ([#40](https://github.com/bluecords/stoatchat/issues/40)) ([9c3cff7](https://github.com/bluecords/stoatchat/commit/9c3cff7c78f8fd7269bb03b3f546bfaaf21690f5))
+
 ## [0.19.1](https://github.com/bluecords/stoatchat/compare/v0.19.0...v0.19.1) (2026-08-15)
 
 
