@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.3](https://github.com/bluecords/stoatchat/compare/v0.19.2...v0.19.3) (2026-08-24)
+
+
+### Bug Fixes
+
+* sending a message outside a server 500s ([#42](https://github.com/bluecords/stoatchat/issues/42)) ([e65905d](https://github.com/bluecords/stoatchat/commit/e65905d632ef1575368cfb3dcc761aeb44ae5952))
+
 ## [0.19.2](https://github.com/bluecords/stoatchat/compare/v0.19.1...v0.19.2) (2026-08-22)
 
 
