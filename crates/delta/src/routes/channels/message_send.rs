@@ -170,8 +170,19 @@ pub async fn message_send(
     // meaning a privileged user got the LOWEST cap in the server, because being
     // privileged skips the very lookup that would raise it. Idempotent when the
     // server is already known.
-    query.set_server_from_channel().await;
-    query.are_we_a_member().await;
+    //
+    // MUST be gated on the channel actually being a server channel:
+    // `set_server_from_channel` is `unimplemented!()` for DMs, groups and saved
+    // messages, and the early-return that makes it idempotent lives INSIDE the
+    // TextChannel/ForumChannel arm - so calling it unconditionally panicked the
+    // worker and 500'd every non-server message send.
+    if matches!(
+        &channel,
+        Channel::TextChannel { .. } | Channel::ForumChannel { .. }
+    ) {
+        query.set_server_from_channel().await;
+        query.are_we_a_member().await;
+    }
 
     // Create model user / members
     let model_user = user
@@ -208,6 +219,7 @@ mod test {
     use std::collections::HashMap;
 
     use crate::{rocket, util::test::TestHarness};
+    use rocket::http::{ContentType, Status};
     use revolt_database::{
         util::{idempotency::IdempotencyKey, reference::Reference},
         Channel, Member, Message, MessageFlagsValue, PartialChannel, PartialMember, Role, Server,
@@ -215,6 +227,42 @@ mod test {
     use revolt_models::v0::{self, DataCreateServerChannel, MessageFlags};
     use revolt_permissions::{ChannelPermission, OverrideField};
     use revolt_result::ErrorType;
+
+    /// Regression test for the unconditional `set_server_from_channel()` call.
+    ///
+    /// That function is `unimplemented!()` for every non-server channel, so
+    /// calling it on a DM, group or saved-messages channel panicked the worker
+    /// and returned 500. Every other test in this file calls
+    /// `Message::create_from_api` directly and therefore never touched the
+    /// handler, which is exactly how the regression reached production - so
+    /// this one goes through the real HTTP route on purpose.
+    #[rocket::async_test]
+    async fn message_send_does_not_panic_outside_a_server() {
+        let harness = TestHarness::new().await;
+        let (_, session, user) = harness.new_user().await;
+
+        // user_a == user_b gives a SavedMessages channel, which sidesteps the
+        // friend-relationship check a two-party DM would impose.
+        let channel = Channel::create_dm(&harness.db, &user, &user)
+            .await
+            .expect("Failed to create saved messages channel");
+
+        let response = TestHarness::with_session(
+            session,
+            harness
+                .client
+                .post(format!("/channels/{}/messages", channel.id()))
+                .header(ContentType::JSON)
+                .body(r#"{"content":"hello"}"#),
+        )
+        .await;
+
+        assert_eq!(
+            response.status(),
+            Status::Ok,
+            "Sending a message outside a server must not 500"
+        );
+    }
 
     #[rocket::async_test]
     async fn message_mention_constraints() {
