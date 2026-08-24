@@ -29,6 +29,9 @@ revolt_optional_struct = { workspace = true }
 serde = { workspace = true }
 iso8601-timestamp = { workspace = true, features = ["serde", "bson"] }
 
+# Auth
+authifier = { workspace = true }
+
 # Core
 revolt-database = { workspace = true }
 revolt-result = { workspace = true }

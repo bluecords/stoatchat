@@ -165,6 +165,16 @@ impl AbstractUsers for ReferenceDb {
         }
     }
 
+    /// Erase a user and everything belonging to them
+    async fn erase_user(&self, _id: &str) -> Result<crate::ErasureReport> {
+        todo!()
+    }
+
+    /// Append an erasure record to the accountability log
+    async fn record_erasure(&self, _report: &crate::ErasureReport) -> Result<()> {
+        todo!()
+    }
+
     /// Remove push subscription for a session by session id (TODO: remove)
     async fn remove_push_subscription_by_session_id(&self, _session_id: &str) -> Result<()> {
         todo!()

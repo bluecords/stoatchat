@@ -2,7 +2,7 @@ use authifier::models::Session;
 use iso8601_timestamp::Timestamp;
 use revolt_result::Result;
 
-use crate::{FieldsUser, PartialUser, RelationshipStatus, User};
+use crate::{ErasureReport, FieldsUser, PartialUser, RelationshipStatus, User};
 
 #[cfg(feature = "mongodb")]
 mod mongodb;
@@ -60,6 +60,20 @@ pub trait AbstractUsers: Sync + Send {
 
     /// Delete a user by their id
     async fn delete_user(&self, id: &str) -> Result<()>;
+
+    /// Erase a user and everything belonging to them
+    ///
+    /// This is the Art. 17 cascade. It is deliberately separate from
+    /// `delete_user`, which only removes the user document and leaves their
+    /// content behind.
+    async fn erase_user(&self, id: &str) -> Result<ErasureReport>;
+
+    /// Append an erasure record to the accountability log
+    ///
+    /// Separate from `erase_user` on purpose: the erasure must be able to
+    /// succeed and be retried without the log entry being written twice, and
+    /// the log must outlive everything the cascade removes.
+    async fn record_erasure(&self, report: &ErasureReport) -> Result<()>;
 
     /// Remove push subscription for a session by session id (TODO: remove)
     async fn remove_push_subscription_by_session_id(&self, session_id: &str) -> Result<()>;

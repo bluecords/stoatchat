@@ -7589,6 +7589,7 @@ dependencies = [
 name = "revolt-crond"
 version = "0.19.3"
 dependencies = [
+ "authifier",
  "futures-lite",
  "iso8601-timestamp",
  "lapin",
