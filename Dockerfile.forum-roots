@@ -1,0 +1,19 @@
+# Local-only incremental build off the prebuilt base image (reuses its ~2.7G
+# dependency cache) to test the forum-roots-query branch against staging.
+# Only revolt-delta (api) is rebuilt - the branch's changes don't alter events
+# runtime behaviour, so events stays on its existing image. Not committed.
+FROM ghcr.io/stoatchat/base:latest AS builder
+WORKDIR /home/rust/src
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN cargo build --release -p revolt-delta
+
+FROM debian:12 AS debian
+
+FROM gcr.io/distroless/cc-debian12:nonroot AS delta
+COPY --from=builder /home/rust/src/target/release/revolt-delta ./
+COPY --from=debian /usr/bin/uname /usr/bin/uname
+EXPOSE 14702
+ENV ROCKET_ADDRESS=0.0.0.0
+USER nonroot
+CMD ["./revolt-delta"]

@@ -48,6 +48,9 @@ pub struct ErasureReport {
     pub relations_pulled: u64,
     /// Sessions removed
     pub sessions_deleted: u64,
+    /// System messages where they were named as the actor, scrubbed to the
+    /// system sentinel rather than deleted - the record is about someone else
+    pub system_references_scrubbed: u64,
 
     /// Attachments left in place because they are held for a safety review
     ///
@@ -111,7 +114,7 @@ pub async fn erase_account(
 
 #[cfg(test)]
 mod tests {
-    use crate::{Message, User};
+    use crate::{Message, SystemMessage, User};
 
     /// The cascade is implemented against MongoDB only, like the channel and
     /// server cascades it sits beside. The reference driver is a test stub and
@@ -132,6 +135,9 @@ mod tests {
                 .await
                 .unwrap();
             let bystander = User::create(&db, "Bystander".to_string(), None, None)
+                .await
+                .unwrap();
+            let leaver2 = User::create(&db, "SecondLeaver".to_string(), None, None)
                 .await
                 .unwrap();
 
@@ -179,6 +185,62 @@ mod tests {
                 db.fetch_message(&bystander_message.id).await.is_ok(),
                 "erasure must not touch another user content"
             );
+
+            // System messages are authored by the system, not the member, so
+            // the author filter misses them. A live test found a `user_joined`
+            // record still carrying the erased id after everything else had
+            // gone; this is the regression guard for that.
+            let about_them = Message {
+                id: "01ERASETESTSYSTEMABOUTTHEM".to_string(),
+                channel: "01ERASETESTCHANNEL00000000".to_string(),
+                author: "00000000000000000000000000".to_string(),
+                system: Some(SystemMessage::UserJoined {
+                    id: leaver2.id.clone(),
+                    by: None,
+                }),
+                ..Default::default()
+            };
+
+            // ...but a record about SOMEBODY ELSE that merely names them as
+            // the actor must survive with the reference scrubbed, not be
+            // deleted - otherwise erasing one member silently erases another
+            // member's join notice.
+            let about_someone_else = Message {
+                id: "01ERASETESTSYSTEMBYTHEM000".to_string(),
+                channel: "01ERASETESTCHANNEL00000000".to_string(),
+                author: "00000000000000000000000000".to_string(),
+                system: Some(SystemMessage::UserJoined {
+                    id: bystander.id.clone(),
+                    by: Some(leaver2.id.clone()),
+                }),
+                ..Default::default()
+            };
+
+            db.insert_message(&about_them).await.unwrap();
+            db.insert_message(&about_someone_else).await.unwrap();
+
+            let sys = db.erase_user(&leaver2.id).await.unwrap();
+
+            assert!(
+                db.fetch_message(&about_them.id).await.is_err(),
+                "a system message about the erased member should go"
+            );
+
+            let survivor = db
+                .fetch_message(&about_someone_else.id)
+                .await
+                .expect("a system message about someone else must survive");
+
+            match survivor.system {
+                Some(SystemMessage::UserJoined { by, .. }) => assert_eq!(
+                    by.as_deref(),
+                    Some("00000000000000000000000000"),
+                    "the erased member should be scrubbed to the system sentinel, not left in place"
+                ),
+                other => panic!("unexpected system message shape: {other:?}"),
+            }
+
+            assert_eq!(sys.system_references_scrubbed, 1);
 
             // Safe to repeat: a pass that dies half way is retried, so the
             // second run has to be a clean no-op rather than an error.

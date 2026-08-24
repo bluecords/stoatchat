@@ -14,6 +14,10 @@ use super::AbstractUsers;
 
 static COL: &str = "users";
 
+/// Author id used for system messages; also the stand-in for a user
+/// reference that has been erased out of a record about somebody else.
+static SYSTEM_USER_ID: &str = "00000000000000000000000000";
+
 #[async_trait]
 impl AbstractUsers for MongoDb {
     /// Insert a new user into the database
@@ -477,6 +481,57 @@ impl MongoDb {
             .await
             .map_err(|_| create_database_error!("delete_many", "messages"))?
             .deleted_count;
+
+        // System messages are authored by the system, not by the member, so
+        // the delete above misses them entirely - a live test found a
+        // `user_joined` record still carrying the erased id after everything
+        // else had gone.
+        //
+        // The two cases are not the same and must not be treated the same:
+        //
+        // * A message ABOUT them (joined, left, kicked, banned, added,
+        //   removed) exists only to describe that member, so it goes.
+        // * A message that merely names them as the ACTOR (`by`, `from`, `to`)
+        //   is a record about somebody else or about the channel - deleting it
+        //   would erase another member's join notice, or a piece of channel
+        //   history, on their way out. The reference is replaced with the
+        //   system sentinel instead, which removes the personal data while
+        //   keeping the record.
+        //
+        // Note `system.id` is only a user id on the types listed here; on
+        // `message_pinned`/`message_unpinned` it is a MESSAGE id, which is why
+        // the type filter is explicit rather than matching `system.id` alone.
+        const ABOUT_A_USER: [&str; 6] = [
+            "user_added",
+            "user_remove",
+            "user_joined",
+            "user_left",
+            "user_kicked",
+            "user_banned",
+        ];
+
+        report.messages_deleted += self
+            .col::<Document>("messages")
+            .delete_many(doc! {
+                "system.type": { "$in": ABOUT_A_USER.to_vec() },
+                "system.id": user_id
+            })
+            .await
+            .map_err(|_| create_database_error!("delete_many", "messages"))?
+            .deleted_count;
+
+        for field in ["system.by", "system.from", "system.to"] {
+            report.system_references_scrubbed += self
+                .col::<Document>("messages")
+                .update_many(
+                    doc! { field: user_id },
+                    doc! { "$set": { field: SYSTEM_USER_ID } },
+                )
+                .await
+                .map_err(|_| create_database_error!("update_many", "messages"))?
+                .modified_count;
+        }
+
 
         // Private channels: theirs alone (saved messages) or two-party DMs,
         // both of which cease to have any reason to exist.
