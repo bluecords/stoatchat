@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/bluecords/stoatchat/compare/v0.19.3...v0.20.0) (2026-08-24)
+
+
+### Features
+
+* actually erase accounts when their deletion falls due ([#43](https://github.com/bluecords/stoatchat/issues/43)) ([8fb8524](https://github.com/bluecords/stoatchat/commit/8fb852473704b9c8ed2cf970df9fa191cc4fb14f))
+
 ## [0.19.3](https://github.com/bluecords/stoatchat/compare/v0.19.2...v0.19.3) (2026-08-24)
 
 
