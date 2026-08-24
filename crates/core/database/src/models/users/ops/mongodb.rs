@@ -1,3 +1,4 @@
+use ::bson::{doc, Bson, Document};
 use ::mongodb::options::{Collation, CollationStrength, FindOneOptions, FindOptions};
 use authifier::models::Session;
 use futures::StreamExt;
@@ -7,7 +8,7 @@ use revolt_result::Result;
 use crate::DocumentId;
 use crate::IntoDocumentPath;
 use crate::MongoDb;
-use crate::{FieldsUser, PartialUser, RelationshipStatus, User};
+use crate::{ErasureReport, FieldsUser, PartialUser, RelationshipStatus, User, ERASURE_POLICY_VERSION};
 
 use super::AbstractUsers;
 
@@ -321,6 +322,25 @@ impl AbstractUsers for MongoDb {
         query!(self, delete_one_by_id, COL, id).map(|_| ())
     }
 
+    /// Erase a user and everything belonging to them
+    async fn erase_user(&self, id: &str) -> Result<ErasureReport> {
+        self.erase_user_data(id).await
+    }
+
+    /// Append an erasure record to the accountability log
+    async fn record_erasure(&self, report: &ErasureReport) -> Result<()> {
+        let mut document = ::bson::to_document(report)
+            .map_err(|_| create_database_error!("to_document", "erasure_log"))?;
+
+        document.insert("recorded_at", Timestamp::now_utc().to_string());
+
+        self.col::<Document>("erasure_log")
+            .insert_one(document)
+            .await
+            .map(|_| ())
+            .map_err(|_| create_database_error!("insert_one", "erasure_log"))
+    }
+
     /// Remove push subscription for a session by session id (TODO: remove)
     async fn remove_push_subscription_by_session_id(&self, session_id: &str) -> Result<()> {
         self.col::<User>("sessions")
@@ -371,5 +391,225 @@ impl IntoDocumentPath for FieldsUser {
             FieldsUser::Suspension => "suspended_until",
             FieldsUser::None => "none",
         })
+    }
+}
+
+impl MongoDb {
+    /// Erase a user and everything belonging to them.
+    ///
+    /// # Ordering
+    ///
+    /// Content first, identity last. Every step is a bulk operation that is a
+    /// no-op the second time it runs, and the user document is removed only at
+    /// the very end - so a pass that dies halfway leaves the account still
+    /// marked for deletion and simply gets repeated. Nothing here may be
+    /// reordered so that the user document goes first, or an interrupted pass
+    /// would strand their content with no owner to find it by.
+    ///
+    /// # What is deliberately NOT erased
+    ///
+    /// * Community assets - server icons and banners, channel icons, role
+    ///   icons and emoji. These are not personal data about whoever uploaded
+    ///   them, and removing them would vandalise the community on the way out.
+    /// * Bans (`server_bans`). A ban that evaporates when the account is
+    ///   deleted is an invitation to come back. Retained on legitimate
+    ///   interests.
+    /// * Safety records (`safety_reports`, `safety_strikes`,
+    ///   `safety_snapshots`) and any attachment flagged `reported`, which the
+    ///   file janitor already refuses to purge. Content under moderation
+    ///   review survives the pass; the count is reported separately rather
+    ///   than folded into the erased total.
+    /// * The erasure record itself, which is the evidence the erasure
+    ///   happened.
+    ///
+    /// Each of those is a judgement someone may need to defend later, so they
+    /// are listed here rather than left implicit in the queries.
+    pub async fn erase_user_data(&self, user_id: &str) -> Result<ErasureReport> {
+        let mut report = ErasureReport {
+            user_id: user_id.to_string(),
+            policy_version: ERASURE_POLICY_VERSION.to_string(),
+            ..Default::default()
+        };
+
+        // Messages they wrote, collected before the messages go so we can find
+        // the attachments hanging off them.
+        let message_ids: Vec<Bson> = self
+            .col::<Document>("messages")
+            .distinct("_id", doc! { "author": user_id })
+            .await
+            .map_err(|_| create_database_error!("distinct", "messages"))?;
+
+        // Their own imagery, plus anything on a message they wrote, plus
+        // uploads they started and never attached to anything.
+        let attachment_filter = doc! {
+            "$or": [
+                {
+                    "used_for.type": { "$in": ["UserAvatar", "UserProfileBackground"] },
+                    "used_for.id": user_id
+                },
+                { "used_for.id": { "$in": &message_ids } },
+                { "uploader_id": user_id, "used_for": { "$exists": false } },
+            ]
+        };
+
+        report.attachments_withheld_reported = self
+            .col::<Document>("attachments")
+            .count_documents(doc! { "$and": [ &attachment_filter, { "reported": true } ] })
+            .await
+            .map_err(|_| create_database_error!("count_documents", "attachments"))?;
+
+        report.attachments_marked = self
+            .col::<Document>("attachments")
+            .count_documents(doc! {
+                "$and": [ &attachment_filter, { "reported": { "$ne": true } } ]
+            })
+            .await
+            .map_err(|_| create_database_error!("count_documents", "attachments"))?;
+
+        // Marks them deleted; the file janitor in crond does the S3 removal on
+        // its next pass and drops the hash record once nothing else points at
+        // the same bytes.
+        self.delete_many_attachments(attachment_filter).await?;
+
+        report.messages_deleted = self
+            .col::<Document>("messages")
+            .delete_many(doc! { "author": user_id })
+            .await
+            .map_err(|_| create_database_error!("delete_many", "messages"))?
+            .deleted_count;
+
+        // Private channels: theirs alone (saved messages) or two-party DMs,
+        // both of which cease to have any reason to exist.
+        let private_channels: Vec<Bson> = self
+            .col::<Document>("channels")
+            .distinct(
+                "_id",
+                doc! {
+                    "$or": [
+                        { "channel_type": "SavedMessages", "user": user_id },
+                        { "channel_type": "DirectMessage", "recipients": user_id },
+                    ]
+                },
+            )
+            .await
+            .map_err(|_| create_database_error!("distinct", "channels"))?;
+
+        if !private_channels.is_empty() {
+            // The other side of a DM keeps no separate copy, so the messages in
+            // it go too. This is the one place erasure reaches another member
+            // content, and it is correct: a two-party channel with one party
+            // erased cannot be shown to anyone.
+            self.col::<Document>("messages")
+                .delete_many(doc! { "channel": { "$in": &private_channels } })
+                .await
+                .map_err(|_| create_database_error!("delete_many", "messages"))?;
+
+            report.channels_deleted = self
+                .col::<Document>("channels")
+                .delete_many(doc! { "_id": { "$in": &private_channels } })
+                .await
+                .map_err(|_| create_database_error!("delete_many", "channels"))?
+                .deleted_count;
+
+            self.delete_associated_channel_objects(Bson::Document(
+                doc! { "$in": &private_channels },
+            ))
+            .await?;
+        }
+
+        // Groups carry on without them.
+        report.groups_departed = self
+            .col::<Document>("channels")
+            .update_many(
+                doc! { "channel_type": "Group", "recipients": user_id },
+                doc! { "$pull": { "recipients": user_id } },
+            )
+            .await
+            .map_err(|_| create_database_error!("update_many", "channels"))?
+            .modified_count;
+
+        report.memberships_deleted = self
+            .col::<Document>("server_members")
+            .delete_many(doc! { "_id.user": user_id })
+            .await
+            .map_err(|_| create_database_error!("delete_many", "server_members"))?
+            .deleted_count;
+
+        report.unreads_deleted = self
+            .col::<Document>("channel_unreads")
+            .delete_many(doc! { "_id.user": user_id })
+            .await
+            .map_err(|_| create_database_error!("delete_many", "channel_unreads"))?
+            .deleted_count;
+
+        report.invites_deleted = self
+            .col::<Document>("channel_invites")
+            .delete_many(doc! { "creator": user_id })
+            .await
+            .map_err(|_| create_database_error!("delete_many", "channel_invites"))?
+            .deleted_count;
+
+        // An instance invite they redeemed stays spent - unsetting the claim
+        // drops the personal reference without handing the code back out.
+        self.col::<Document>("invites")
+            .update_many(
+                doc! { "claimed_by": user_id },
+                doc! { "$unset": { "claimed_by": 1 } },
+            )
+            .await
+            .map_err(|_| create_database_error!("update_many", "invites"))?;
+
+        // Bots they own have nobody to answer to any more.
+        let bot_ids: Vec<Bson> = self
+            .col::<Document>("bots")
+            .distinct("_id", doc! { "owner": user_id })
+            .await
+            .map_err(|_| create_database_error!("distinct", "bots"))?;
+
+        if !bot_ids.is_empty() {
+            report.bots_deleted = self
+                .col::<Document>("bots")
+                .delete_many(doc! { "owner": user_id })
+                .await
+                .map_err(|_| create_database_error!("delete_many", "bots"))?
+                .deleted_count;
+
+            // A bot id IS its user id.
+            self.col::<Document>("users")
+                .delete_many(doc! { "_id": { "$in": &bot_ids } })
+                .await
+                .map_err(|_| create_database_error!("delete_many", "users"))?;
+
+            self.col::<Document>("sessions")
+                .delete_many(doc! { "user_id": { "$in": &bot_ids } })
+                .await
+                .map_err(|_| create_database_error!("delete_many", "sessions"))?;
+        }
+
+        // Everyone who had them as a friend or a block still carries their id.
+        report.relations_pulled = self
+            .col::<Document>("users")
+            .update_many(
+                doc! { "relations._id": user_id },
+                doc! { "$pull": { "relations": { "_id": user_id } } },
+            )
+            .await
+            .map_err(|_| create_database_error!("update_many", "users"))?
+            .modified_count;
+
+        report.sessions_deleted = self
+            .col::<Document>("sessions")
+            .delete_many(doc! { "user_id": user_id })
+            .await
+            .map_err(|_| create_database_error!("delete_many", "sessions"))?
+            .deleted_count;
+
+        // Identity last.
+        self.col::<Document>("users")
+            .delete_one(doc! { "_id": user_id })
+            .await
+            .map_err(|_| create_database_error!("delete_one", "users"))?;
+
+        Ok(report)
     }
 }
