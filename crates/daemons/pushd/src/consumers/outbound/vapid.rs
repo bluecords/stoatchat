@@ -15,6 +15,20 @@ use web_push::{
     WebPushClient, WebPushError, WebPushMessageBuilder,
 };
 
+/// Host portion of a push endpoint, for log context.
+///
+/// Which push service rejected a message is the single most useful fact when
+/// diagnosing web push, and it is the one thing the error itself never carries.
+fn endpoint_host(endpoint: &str) -> &str {
+    endpoint
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(endpoint)
+        .split('/')
+        .next()
+        .unwrap_or("unknown")
+}
+
 #[derive(Clone)]
 #[allow(unused)]
 pub struct VapidOutboundConsumer {
@@ -155,12 +169,26 @@ impl Consumer for VapidOutboundConsumer {
         let mut builder = WebPushMessageBuilder::new(&subscription);
         builder.set_vapid_signature(signature);
 
-        builder.set_payload(ContentEncoding::AesGcm, payload_body.as_bytes());
+        // aes128gcm (RFC 8291) is the standard content encoding and the only one
+        // Microsoft's WNS accepts — the legacy `AesGcm` draft encoding makes WNS
+        // reject every push with 400 Bad Request. Google and Mozilla tolerate the
+        // old encoding, which is why this only ever showed up on Windows clients.
+        builder.set_payload(ContentEncoding::Aes128Gcm, payload_body.as_bytes());
 
         let msg = builder.build()?;
 
         match self.client.send(msg).await {
-            Err(WebPushError::Unauthorized) => {
+            // The subscription is genuinely dead: the credentials are rejected, or
+            // the push service says the endpoint is gone. Drop it — the client will
+            // re-subscribe on next load.
+            Err(err @ (WebPushError::Unauthorized
+            | WebPushError::EndpointNotValid
+            | WebPushError::EndpointNotFound)) => {
+                log::info!(
+                    "Removing dead web push subscription for session {}: {}",
+                    payload.session_id, err
+                );
+
                 if let Err(err) = self
                     .db
                     .remove_push_subscription_by_session_id(&payload.session_id)
@@ -168,6 +196,21 @@ impl Consumer for VapidOutboundConsumer {
                 {
                     revolt_config::capture_error(&err);
                 }
+            }
+            // Deliberately NOT pruned. A 400 means *we* sent something the push
+            // service would not accept, so the subscription is very likely fine and
+            // deleting it would destroy a working registration to hide our own bug.
+            // Log loudly with the endpoint host so the next one is diagnosable
+            // without correlating timestamps by hand.
+            Err(err @ WebPushError::BadRequest(_)) => {
+                log::error!(
+                    "Web push rejected as malformed by {} (session {}): {} — NOT removing the subscription, this is our request, not a dead endpoint.",
+                    endpoint_host(&subscription.endpoint),
+                    payload.session_id,
+                    err
+                );
+
+                return Err(err.into());
             }
             res => {
                 res?;
