@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/bluecords/stoatchat/compare/v0.20.0...v0.20.1) (2026-08-29)
+
+
+### Bug Fixes
+
+* **pushd:** send web push as aes128gcm, and stop pruning on our own bad requests ([#46](https://github.com/bluecords/stoatchat/issues/46)) ([09ca8ed](https://github.com/bluecords/stoatchat/commit/09ca8eda25586c8de1027748447d74aef9107c2a))
+
 ## [0.20.0](https://github.com/bluecords/stoatchat/compare/v0.19.3...v0.20.0) (2026-08-24)
 
 
