@@ -19,6 +19,13 @@ pub trait AbstractMessages: Sync + Send {
     /// Fetch multiple messages by given query
     async fn fetch_messages(&self, query: MessageQuery) -> Result<Vec<Message>>;
 
+    /// Count replies per forum post in a channel
+    ///
+    /// Returns a map of replied-to message id -> number of messages replying to
+    /// it. Lets the forum post list show reply counts without fetching every
+    /// message in the channel.
+    async fn fetch_forum_reply_counts(&self, channel: &str) -> Result<HashMap<String, i64>>;
+
     /// Fetch multiple messages by given IDs
     async fn fetch_messages_by_id(&self, ids: &[String]) -> Result<Vec<Message>>;
 

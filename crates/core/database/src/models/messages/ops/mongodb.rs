@@ -59,6 +59,13 @@ impl AbstractMessages for MongoDb {
             filter.insert("pinned", pinned);
         };
 
+        // Only forum root posts: messages that carry a `forum_title`. Lets the
+        // forum post list page just the roots instead of fetching every message
+        // (replies included) to derive them client-side.
+        if let Some(true) = query.filter.forum_root {
+            filter.insert("forum_title", doc! { "$exists": true });
+        };
+
         // 2. Find query limit
         let limit = query.limit.unwrap_or(50);
 
@@ -168,6 +175,48 @@ impl AbstractMessages for MongoDb {
                 .map_err(|_| create_database_error!("find", COL))
             }
         }
+    }
+
+    /// Count replies per forum post in a channel
+    async fn fetch_forum_reply_counts(&self, channel: &str) -> Result<HashMap<String, i64>> {
+        let pipeline = vec![
+            doc! {
+                "$match": {
+                    "channel": channel,
+                    "replies": { "$exists": true, "$ne": [] }
+                }
+            },
+            doc! { "$unwind": "$replies" },
+            doc! {
+                "$group": {
+                    "_id": "$replies",
+                    "count": { "$sum": 1_i32 }
+                }
+            },
+        ];
+
+        #[derive(serde::Deserialize)]
+        struct ReplyCount {
+            #[serde(rename = "_id")]
+            id: String,
+            count: i64,
+        }
+
+        let mut cursor = self
+            .col::<Document>(COL)
+            .aggregate(pipeline)
+            .await
+            .map_err(|_| create_database_error!("aggregate", COL))?
+            .with_type::<ReplyCount>();
+
+        let mut counts = HashMap::new();
+        while let Some(result) = cursor.next().await {
+            if let Ok(item) = result {
+                counts.insert(item.id, item.count);
+            }
+        }
+
+        Ok(counts)
     }
 
     /// Fetch multiple messages by given IDs
