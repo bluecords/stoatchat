@@ -661,6 +661,8 @@ impl From<crate::PolicyChange> for PolicyChange {
             effective_time: value.effective_time,
             description: value.description,
             url: value.url,
+            version: value.version,
+            sha256: value.sha256,
         }
     }
 }
