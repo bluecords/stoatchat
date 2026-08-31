@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.0](https://github.com/bluecords/stoatchat/compare/v0.20.1...v0.21.0) (2026-08-31)
+
+
+### Features
+
+* **consent:** the consent gate - storage, routes, and flagged-off enforcement ([#48](https://github.com/bluecords/stoatchat/issues/48)) ([d5ecb55](https://github.com/bluecords/stoatchat/commit/d5ecb55200b9f809de206aa9d0cd1f409fe1e569))
+
 ## [0.20.1](https://github.com/bluecords/stoatchat/compare/v0.20.0...v0.20.1) (2026-08-29)
 
 
