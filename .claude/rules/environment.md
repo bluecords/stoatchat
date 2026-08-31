@@ -10,6 +10,9 @@ one below has actually cost a retry.
 - **The `Bash` tool is Git Bash (POSIX sh), not PowerShell and not cmd.** Use `/c/Users/...`,
   `$VAR`, forward slashes. The `PowerShell` tool is separate and takes PowerShell syntax.
 - **`gh` is at `/c/Program Files/GitHub CLI/gh.exe`** — quote the whole path. Bare `gh` may not resolve.
+- **`gh api` endpoints must NOT start with `/`.** Git Bash rewrites a leading-slash argument into
+  a Windows filesystem path, and the error reads like a bad endpoint:
+  `invalid API endpoint: "C:/Program Files/Git/orgs/..."`. Write `gh api orgs/bluecords/...`.
 - **Foreground `sleep` is blocked by the harness.** To wait on something, use `run_in_background`
   and let the completion notification arrive. Do not chain short sleeps to get around it.
 - **`pyyaml` is not installed.** `python -m pip install --quiet pyyaml` first if you need to
