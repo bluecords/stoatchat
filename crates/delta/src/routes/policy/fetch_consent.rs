@@ -56,6 +56,7 @@ pub async fn fetch_consent(db: &State<Database>, user: User) -> Result<Json<v0::
     Ok(Json(v0::ConsentState {
         policy_id: policy.id,
         policy_version: policy.version,
+        policy_sha256: policy.sha256,
         acks: latest,
     }))
 }

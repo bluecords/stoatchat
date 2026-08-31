@@ -90,6 +90,14 @@ auto_derived!(
         /// Human-readable version of that policy
         #[serde(skip_serializing_if = "Option::is_none")]
         pub policy_version: Option<String>,
+        /// SHA-256 of the document set that policy refers to.
+        ///
+        /// Returned so a caller can read its position and then record against
+        /// the SAME policy in one round trip. A gate that fires long after login
+        /// has no reason to still be holding the Ready payload, and making it
+        /// re-derive the hash from somewhere else is how the two drift apart.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub policy_sha256: Option<String>,
 
         /// Every item this account has decided on, granted or not
         pub acks: Vec<ConsentAck>,
