@@ -49,6 +49,18 @@ pub struct RevoltFeatures {
     pub email: bool,
     /// Whether this server is invite only
     pub invite_only: bool,
+    /// Whether unconsented members are actually being restricted.
+    ///
+    /// Published because clients compute permissions THEMSELVES, from roles
+    /// and timeout, and have no way to see the consent check inside
+    /// calculate_server_permissions. Without this flag a gated member gets a
+    /// normal-looking client that fails at every action, which reads as a bug
+    /// rather than as a gate.
+    ///
+    /// It also keeps two things separate that must stay separate: publishing a
+    /// policy (which prompts) and enforcing it (which blocks). A client that
+    /// only knew a policy existed would have to guess which one was happening.
+    pub consent_gate: bool,
     /// File server service configuration
     pub autumn: Feature,
     /// Proxy service configuration
@@ -202,6 +214,7 @@ pub async fn root() -> Result<Json<RevoltConfig>> {
             },
             email: !config.api.smtp.host.is_empty(),
             invite_only: config.api.registration.invite_only,
+            consent_gate: config.api.security.consent_gate_enabled,
             autumn: Feature {
                 enabled: !config.hosts.autumn.is_empty(),
                 url: config.hosts.autumn.clone(),
