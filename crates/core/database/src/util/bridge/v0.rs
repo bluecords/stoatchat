@@ -657,6 +657,7 @@ impl From<Masquerade> for crate::Masquerade {
 impl From<crate::PolicyChange> for PolicyChange {
     fn from(value: crate::PolicyChange) -> Self {
         PolicyChange {
+            id: value.id,
             created_time: value.created_time,
             effective_time: value.effective_time,
             description: value.description,

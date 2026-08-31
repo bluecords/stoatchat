@@ -3,6 +3,13 @@ use iso8601_timestamp::Timestamp;
 auto_derived!(
     /// Platform policy change
     pub struct PolicyChange {
+        /// Unique Id
+        ///
+        /// Sent because POST /policy/consent identifies the policy by id, so a
+        /// client that never receives one cannot record consent at all.
+        #[cfg_attr(feature = "serde", serde(rename = "_id"))]
+        pub id: String,
+
         /// Time at which this policy was created
         pub created_time: Timestamp,
         /// Time at which this policy is effective
