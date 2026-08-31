@@ -73,3 +73,25 @@ auto_derived!(
         pub client: Option<String>,
     }
 );
+
+auto_derived!(
+    /// The account's CURRENT consent position on the policy in force.
+    ///
+    /// Derived from the append-only records rather than stored: the latest row
+    /// for each `ack_key` wins, so a withdrawal simply lands after a grant. The
+    /// records themselves are never edited.
+    ///
+    /// Scoped to the CURRENT policy on purpose. Consent to a superseded document
+    /// is not consent to this one, and reporting it as if it were would let a
+    /// stale grant silently satisfy a gate it was never given for.
+    pub struct ConsentState {
+        /// The policy these decisions are measured against
+        pub policy_id: String,
+        /// Human-readable version of that policy
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub policy_version: Option<String>,
+
+        /// Every item this account has decided on, granted or not
+        pub acks: Vec<ConsentAck>,
+    }
+);
