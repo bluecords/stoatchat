@@ -1,6 +1,6 @@
 use crate::{
     ChannelPermission, ChannelType, PermissionQuery, PermissionValue, RelationshipStatus,
-    UserPermission, ALLOW_IN_TIMEOUT, DEFAULT_PERMISSION_DIRECT_MESSAGE,
+    UserPermission, ALLOW_IN_TIMEOUT, ALLOW_WITHOUT_CONSENT, DEFAULT_PERMISSION_DIRECT_MESSAGE,
     DEFAULT_PERMISSION_SAVED_MESSAGES, DEFAULT_PERMISSION_VIEW_ONLY,
 };
 
@@ -72,6 +72,12 @@ pub async fn calculate_server_permissions<P: PermissionQuery>(query: &mut P) -> 
 
     if query.are_we_timed_out().await {
         permissions.restrict(*ALLOW_IN_TIMEOUT);
+    }
+
+    // Applied LAST so nothing below can grant its way back out. An unconsented
+    // member sees nothing regardless of the roles they hold.
+    if query.are_we_unconsented().await {
+        permissions.restrict(*ALLOW_WITHOUT_CONSENT);
     }
 
     permissions

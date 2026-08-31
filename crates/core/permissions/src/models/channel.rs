@@ -121,6 +121,16 @@ impl fmt::Display for ChannelPermission {
 impl_op_ex!(+ |a: &ChannelPermission, b: &ChannelPermission| -> u64 { *a as u64 | *b as u64 });
 impl_op_ex_commutative!(+ |a: &u64, b: &ChannelPermission| -> u64 { *a | *b as u64 });
 
+/// What an unconsented member may do: nothing.
+///
+/// Deliberately zero rather than view-only. The consent gate exists so a member
+/// sees no content at all until they have agreed - view-only would still show
+/// them the imagery the gate is there to obtain consent for.
+///
+/// This is the same effect the `Pending` role's deny mask produces, applied by
+/// consent state instead of role membership - so consent never touches roles.
+pub static ALLOW_WITHOUT_CONSENT: Lazy<u64> = Lazy::new(|| 0);
+
 pub static ALLOW_IN_TIMEOUT: Lazy<u64> =
     Lazy::new(|| ChannelPermission::ViewChannel + ChannelPermission::ReadMessageHistory);
 

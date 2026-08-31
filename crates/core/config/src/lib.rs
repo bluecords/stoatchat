@@ -207,6 +207,13 @@ pub struct ApiSecurity {
     pub voso_legacy_token: String,
     pub captcha: ApiSecurityCaptcha,
     pub trust_cloudflare: bool,
+    /// Block members who have not accepted the current policy.
+    ///
+    /// Defaults to false. The failure mode of getting this wrong is every member
+    /// losing access at once, so it is switched on deliberately rather than
+    /// arriving with a deploy.
+    #[serde(default)]
+    pub consent_gate_enabled: bool,
     pub easypwned: String,
     pub tenor_key: String,
 }
