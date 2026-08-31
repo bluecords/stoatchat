@@ -39,6 +39,12 @@ pub trait PermissionQuery {
     /// Is our perspective user timed out on this server?
     async fn are_we_timed_out(&mut self) -> bool;
 
+    /// Has our perspective user NOT yet accepted the current policy?
+    ///
+    /// Returns false when the consent gate is disabled, and for bots, which
+    /// cannot consent to anything.
+    async fn are_we_unconsented(&mut self) -> bool;
+
     /// Is the member muted?
     async fn do_we_have_publish_overwrites(&mut self) -> bool;
 

@@ -60,6 +60,10 @@ async fn validate_user_permissions() {
             unreachable!()
         }
 
+        async fn are_we_unconsented(&mut self) -> bool {
+            false
+        }
+
         async fn are_we_timed_out(&mut self) -> bool {
             unreachable!()
         }
@@ -155,6 +159,10 @@ async fn validate_group_permissions() {
 
         async fn get_our_server_role_overrides(&mut self) -> Vec<Override> {
             unreachable!()
+        }
+
+        async fn are_we_unconsented(&mut self) -> bool {
+            false
         }
 
         async fn are_we_timed_out(&mut self) -> bool {
@@ -266,6 +274,10 @@ async fn validate_server_permissions() {
             }]
         }
 
+        async fn are_we_unconsented(&mut self) -> bool {
+            false
+        }
+
         async fn are_we_timed_out(&mut self) -> bool {
             false
         }
@@ -364,6 +376,10 @@ async fn validate_timed_out_member() {
 
         async fn get_our_server_role_overrides(&mut self) -> Vec<Override> {
             vec![]
+        }
+
+        async fn are_we_unconsented(&mut self) -> bool {
+            false
         }
 
         async fn are_we_timed_out(&mut self) -> bool {

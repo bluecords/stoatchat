@@ -242,6 +242,34 @@ impl PermissionQuery for DatabasePermissionQuery<'_> {
         }
     }
 
+    /// Has our perspective user NOT yet accepted the current policy?
+    ///
+    /// Bots are exempt - they cannot consent, and blocking them would take down
+    /// the Discord bridge and every automation the moment the gate is enabled.
+    /// This mirrors bonfire, which already skips bots when pushing policies on
+    /// the Ready event.
+    ///
+    /// Deliberately keyed on consent state, never on a role: `Pending` means
+    /// "not yet vetted by a human" and completing a consent form must never
+    /// clear it.
+    async fn are_we_unconsented(&mut self) -> bool {
+        if !revolt_config::config()
+            .await
+            .api
+            .security
+            .consent_gate_enabled
+        {
+            return false;
+        }
+
+        if self.perspective.bot.is_some() || self.perspective.privileged {
+            return false;
+        }
+
+        let latest = crate::latest_policy_change_time(self.database).await;
+        self.perspective.last_acknowledged_policy_change < latest
+    }
+
     async fn do_we_have_publish_overwrites(&mut self) -> bool {
         if let Some(member) = &self.member {
             member.can_publish

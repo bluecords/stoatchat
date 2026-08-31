@@ -61,6 +61,8 @@ authifier_shield_key = ""
 voso_legacy_token = ""
 # Whether services are behind the Cloudflare network
 trust_cloudflare = false
+# Consent gate: OFF until the client-side flow ships and the tester group has run it.
+consent_gate_enabled = false
 # easypwned endpoint
 easypwned = ""
 # Tenor API Key
