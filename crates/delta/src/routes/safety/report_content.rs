@@ -122,7 +122,9 @@ pub async fn report_content(
     // Save the report
     let report = Report {
         id,
-        author_id: user.id,
+        // Cloned rather than moved: `user` is still needed below, to name the
+        // reporter in the moderation announcement.
+        author_id: user.id.clone(),
         content: data.content,
         additional_context: data.additional_context,
         status: ReportStatus::Created {},
