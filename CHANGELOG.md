@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.22.0](https://github.com/bluecords/stoatchat/compare/v0.21.0...v0.22.0) (2026-09-03)
+
+
+### Features
+
+* **safety:** announce new reports in a moderation channel ([#50](https://github.com/bluecords/stoatchat/issues/50)) ([e4bd92f](https://github.com/bluecords/stoatchat/commit/e4bd92ff3e52f7d72ab55c84bf85cdfaa4a4bfdc))
+
+
+### Bug Fixes
+
+* **servers:** member search missed everyone whose name was capitalised ([#51](https://github.com/bluecords/stoatchat/issues/51)) ([9761662](https://github.com/bluecords/stoatchat/commit/9761662a211354e4023392d5197020e21b92db9e))
+
 ## [0.21.0](https://github.com/bluecords/stoatchat/compare/v0.20.1...v0.21.0) (2026-08-31)
 
 
