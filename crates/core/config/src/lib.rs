@@ -256,6 +256,33 @@ pub struct Api {
     pub workers: ApiWorkers,
     pub livekit: ApiLiveKit,
     pub users: ApiUsers,
+    /// Defaulted on purpose: a deployed Revolt.toml written before this section
+    /// existed must still parse, or the API refuses to start after a deploy.
+    #[serde(default)]
+    pub safety: ApiSafety,
+}
+
+/// Where user safety reports are announced.
+///
+/// Before this existed, `POST /safety/report` wrote a row to `safety_reports`,
+/// fired `EventV1::ReportCreate` at a topic with no subscribers, and told
+/// nobody. There is no admin surface either, so reports accumulated unseen -
+/// a safety promise the product was not keeping.
+#[derive(Deserialize, Debug, Clone, Default)]
+pub struct ApiSafety {
+    /// Channel id to announce new reports in. Empty disables announcements,
+    /// which is the previous behaviour.
+    #[serde(default)]
+    pub reports_channel: String,
+    /// Role ids to mention on each announcement.
+    ///
+    /// This is what actually delivers a push: for a text channel, notification
+    /// recipients come from the message's `mentions`, so these roles are
+    /// expanded to their members when the announcement is sent. Keying off a
+    /// ROLE rather than a list of user ids means granting someone moderator
+    /// automatically enrols them, and removing it un-enrols them.
+    #[serde(default)]
+    pub reports_mention_roles: Vec<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
