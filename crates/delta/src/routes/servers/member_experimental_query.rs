@@ -62,16 +62,35 @@ pub async fn member_experimental_query(
     members.sort_by(|a, b| a.id.user.cmp(&b.id.user));
     users.sort_by(|a, b| a.id.cmp(&b.id));
 
-    // Filter all matches
+    // Filter all matches.
+    //
+    // Measured 2026-09-03 against the live server: searching "bunjie" for a
+    // member displayed as "NakedBunjie" returned {"members":[],"users":[]}.
+    // Three separate reasons, all fixed here:
+    //
+    //  1. `contains` is CASE SENSITIVE, so any name typed in lowercase - which
+    //     is how people type - missed every capitalised name.
+    //  2. Only nickname OR username was searched, never `display_name`, even
+    //     though display name is what clients actually render (the client picks
+    //     nickname ?? displayName ?? username).
+    //  3. It was an if/else on nickname, so anyone WITH a nickname could not be
+    //     found by their username at all.
+    //
+    // Reported by Bunjie as "if I type a user- nothing".
+    let query = options.query.to_lowercase();
+
     let mut zipped_vec: Vec<(Member, User)> = members
         .into_iter()
         .zip(users)
         .filter(|(member, user)| {
-            if let Some(nickname) = &member.nickname {
-                nickname.contains(&options.query)
-            } else {
-                user.username.contains(&options.query)
-            }
+            [
+                member.nickname.as_deref(),
+                user.display_name.as_deref(),
+                Some(user.username.as_str()),
+            ]
+            .into_iter()
+            .flatten()
+            .any(|name| name.to_lowercase().contains(&query))
         })
         .collect();
 
