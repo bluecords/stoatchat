@@ -68,6 +68,16 @@ easypwned = ""
 # Tenor API Key
 tenor_key = ""
 
+[api.safety]
+# Channel that new user safety reports are announced in.
+# Empty = announcements off (the behaviour before this existed: reports were
+# written to the database and nobody was told).
+reports_channel = ""
+# Role ids mentioned on each announcement. Expanded to their members so the
+# mention actually delivers a push notification, and so that granting someone
+# the moderator role enrols them automatically.
+reports_mention_roles = []
+
 [api.security.captcha]
 # hCaptcha configuration
 hcaptcha_key = ""
