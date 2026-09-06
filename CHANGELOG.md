@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.23.2](https://github.com/bluecords/stoatchat/compare/v0.23.1...v0.23.2) (2026-09-06)
+
+
+### Bug Fixes
+
+* **pushd:** prune FCM tokens the server reports as UNREGISTERED ([#58](https://github.com/bluecords/stoatchat/issues/58)) ([5c24d18](https://github.com/bluecords/stoatchat/commit/5c24d189069a7bf6d0c2a0cf883f69e06f3422f6))
+* **push:** show the author's display name, honour masquerade, drop "Revolt" ([#60](https://github.com/bluecords/stoatchat/issues/60)) ([cb0ddc9](https://github.com/bluecords/stoatchat/commit/cb0ddc93100ed4b8cd3f683a9b858307518a42d6))
+
 ## [0.23.1](https://github.com/bluecords/stoatchat/compare/v0.23.0...v0.23.1) (2026-09-06)
 
 
