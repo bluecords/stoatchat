@@ -284,6 +284,37 @@ impl Consumer for FcmOutboundConsumer {
                     revolt_config::capture_error(&err);
                 }
             }
+            // A token FCM reports as UNREGISTERED is permanently dead: the app was
+            // uninstalled, its data cleared, or the token rotated. Keeping it means
+            // retrying it on every notification forever, and logging two error
+            // lines each time.
+            //
+            // Measured on NAC 2026-09-06: 16 stored FCM subscriptions, the oldest
+            // from 2026-06-13, every one of them UNREGISTERED. A single mention
+            // produced 8 error-level lines and zero deliveries. At 130 members that
+            // is a permanently red log that trains everyone to ignore it.
+            //
+            // The sibling VAPID consumer already prunes its equivalent errors
+            // (Unauthorized / EndpointNotValid / EndpointNotFound); this is the
+            // same rule, and the same exception applies - an INVALID_ARGUMENT (400)
+            // means WE sent something malformed, so the token is very likely fine
+            // and deleting it would destroy a working registration to hide our own
+            // bug. Matched on the documented FCM error code rather than the HTTP
+            // status, because only the code distinguishes those two cases.
+            Err(FcmError::FCM(ref msg)) if msg.contains("UNREGISTERED") => {
+                log::info!(
+                    "Removing dead FCM subscription for session {}: token is UNREGISTERED",
+                    payload.session_id
+                );
+
+                if let Err(err) = self
+                    .db
+                    .remove_push_subscription_by_session_id(&payload.session_id)
+                    .await
+                {
+                    revolt_config::capture_error(&err);
+                }
+            }
             res => {
                 res?;
             }
