@@ -20,8 +20,16 @@ use rocket::{serde::json::Json, State};
 /// Before this existed, the inviter was written ONLY onto the "joined the
 /// server" system message in a channel - so a channel wipe erased all of it,
 /// and it was already empty for the existing membership.
+/// ⚠️ The path is `/member-attribution`, NOT `/members/attribution`, and that is
+/// not cosmetic. `member_fetch` already owns `/<target>/members/<member>`; both
+/// routes are "partially dynamic" so Rocket ranks them equally and falls back to
+/// declaration order, which meant `attribution` was read as a MEMBER ID and the
+/// route 404'd from inside `fetch_member` — a not-found that names the member
+/// collection and never mentions routing. Measured against the live 0.23.0 API.
+/// A distinct segment cannot collide; an explicit `rank` would have depended on
+/// remembering why it was there.
 #[openapi(tag = "Server Members")]
-#[get("/<target>/members/attribution")]
+#[get("/<target>/member-attribution")]
 pub async fn attribution(
     db: &State<Database>,
     user: User,
