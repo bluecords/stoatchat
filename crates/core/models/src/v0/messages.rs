@@ -465,6 +465,18 @@ impl MessageAuthor<'_> {
             MessageAuthor::System { username, .. } => username,
         }
     }
+
+    /// The name a member actually sees, falling back to the username.
+    ///
+    /// Webhooks and system messages have no separate display name, so for those
+    /// this is the same string `username()` returns.
+    pub fn display_name(&self) -> &str {
+        match self {
+            MessageAuthor::User(user) => user.display_name.as_deref().unwrap_or(&user.username),
+            MessageAuthor::Webhook(webhook) => &webhook.name,
+            MessageAuthor::System { username, .. } => username,
+        }
+    }
 }
 
 impl From<SystemMessage> for String {
@@ -497,7 +509,15 @@ impl PushNotification {
     pub async fn from(msg: Message, author: Option<MessageAuthor<'_>>, channel: Channel) -> Self {
         let config = config().await;
 
-        let icon = if let Some(author) = &author {
+        // A masquerade overrides the name and avatar shown on the message itself, so the
+        // notification has to honour it too — otherwise every bridged or migrated message
+        // pushes as the relaying bot rather than the person who actually wrote it.
+        let masquerade = msg.masquerade.as_ref();
+
+        let icon = if let Some(avatar) = masquerade.and_then(|m| m.avatar.as_deref()) {
+            // Already a full URL; unlike an Autumn file id it must not be prefixed.
+            avatar.to_string()
+        } else if let Some(author) = &author {
             if let Some(avatar) = author.avatar() {
                 format!("{}/avatars/{}", config.hosts.autumn, avatar)
             } else {
@@ -542,9 +562,10 @@ impl PushNotification {
             .as_secs();
 
         Self {
-            author: author
-                .map(|x| x.username().to_string())
-                .unwrap_or_else(|| "Revolt".to_string()),
+            author: masquerade
+                .and_then(|m| m.name.clone())
+                .or_else(|| author.map(|x| x.display_name().to_string()))
+                .unwrap_or_else(|| "NAC".to_string()),
             icon,
             image,
             body,
