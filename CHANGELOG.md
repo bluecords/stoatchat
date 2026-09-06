@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.0](https://github.com/bluecords/stoatchat/compare/v0.22.0...v0.23.0) (2026-09-06)
+
+
+### Features
+
+* **invites:** record who invited a member, and let a code carry a limit ([#54](https://github.com/bluecords/stoatchat/issues/54)) ([4d1b616](https://github.com/bluecords/stoatchat/commit/4d1b61681ab40952dc71ddb416088ef067fd6929))
+
 ## [0.22.0](https://github.com/bluecords/stoatchat/compare/v0.21.0...v0.22.0) (2026-09-03)
 
 
