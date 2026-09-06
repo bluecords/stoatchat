@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/bluecords/stoatchat/compare/v0.23.0...v0.23.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **invites:** the attribution route collided with member fetch and 404'd ([#56](https://github.com/bluecords/stoatchat/issues/56)) ([21e9d25](https://github.com/bluecords/stoatchat/commit/21e9d2556fac31bf4d5f32b419c2d3131cfabe3c))
+
 ## [0.23.0](https://github.com/bluecords/stoatchat/compare/v0.22.0...v0.23.0) (2026-09-06)
 
 
