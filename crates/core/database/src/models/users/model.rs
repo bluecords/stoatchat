@@ -213,7 +213,21 @@ impl User {
             id: account_id.into().unwrap_or_else(|| Ulid::new().to_string()),
             discriminator: User::find_discriminator(db, &new_username, None).await?,
             username: new_username.clone(),
-            last_acknowledged_policy_change: Timestamp::now_utc(),
+            // A brand new account has consented to NOTHING, so it must not be
+            // stamped as having acknowledged the current policy.
+            //
+            // `now_utc()` here made every signup pass `are_we_unconsented`
+            // immediately - the stamp is later than the policy's created_time -
+            // so the consent gate never fired for a new member. They were
+            // recorded as having acknowledged a policy they were never shown,
+            // and the gate is also where this deployment asks a member which
+            // Discord account is theirs, so nothing was captured either.
+            //
+            // Upstream's reasoning presumably holds for a policy-CHANGE gate,
+            // where nagging a new arrival about a change that predates them is
+            // wrong. It does not hold when the same mechanism carries first
+            // consent.
+            last_acknowledged_policy_change: Timestamp::UNIX_EPOCH,
             ..Default::default()
         };
 
