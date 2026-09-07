@@ -9,6 +9,7 @@ mod file_hashes;
 mod files;
 mod messages;
 mod consent_records;
+mod discord_identities;
 mod policy_changes;
 mod ratelimit_events;
 mod safety_reports;
@@ -30,6 +31,7 @@ pub use file_hashes::*;
 pub use files::*;
 pub use messages::*;
 pub use consent_records::*;
+pub use discord_identities::*;
 pub use policy_changes::*;
 pub use ratelimit_events::*;
 pub use safety_reports::*;
@@ -59,6 +61,7 @@ pub trait AbstractDatabase:
     + files::AbstractAttachments
     + messages::AbstractMessages
     + consent_records::AbstractConsentRecord
+    + discord_identities::AbstractDiscordIdentity
     + policy_changes::AbstractPolicyChange
     + ratelimit_events::AbstractRatelimitEvents
     + safety_reports::AbstractReport

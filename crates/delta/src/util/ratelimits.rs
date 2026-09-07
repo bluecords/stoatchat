@@ -51,6 +51,12 @@ impl<'a> RatelimitResolver<Request<'a>> for DeltaRatelimits {
                         ("auth", None)
                     }
                 }
+                // Search-as-you-type against the Discord snapshot during the
+                // consent gate. The default bucket of 20 throttles a member
+                // mid-word; this is still low enough that walking the whole
+                // roster a page at a time is slow, and the route caps how far
+                // anyone can page anyway.
+                ("policy", Some("discord"), _) => ("discord_identity", None),
                 ("swagger", _, _) => ("swagger", None),
                 ("safety", Some("report"), _) => ("safety_report", Some("report")),
                 ("safety", _, _) => ("safety", None),
@@ -72,6 +78,7 @@ impl<'a> RatelimitResolver<Request<'a>> for DeltaRatelimits {
             "auth" => 15,
             "auth_delete" => 255,
             "default_avatar" => 255,
+            "discord_identity" => 30,
             "swagger" => 100,
             "safety" => 15,
             "safety_report" => 3,

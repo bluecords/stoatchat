@@ -5,6 +5,7 @@ mod ban_create;
 mod ban_list;
 mod ban_remove;
 mod channel_create;
+mod discord_claims;
 mod emoji_list;
 mod invites_fetch;
 mod member_attribution;
@@ -41,6 +42,9 @@ pub fn routes() -> (Vec<Route>, OpenApi) {
         member_edit::edit,
         member_experimental_query::member_experimental_query,
         member_attribution::attribution,
+        discord_claims::fetch_discord_claims,
+        discord_claims::confirm_discord_claim,
+        discord_claims::reject_discord_claim,
         ban_create::ban,
         ban_remove::unban,
         ban_list::list,
