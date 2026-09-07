@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/bluecords/stoatchat/compare/v0.24.0...v0.24.1) (2026-09-07)
+
+
+### Bug Fixes
+
+* **consent:** a new account must not be born already consented ([#63](https://github.com/bluecords/stoatchat/issues/63)) ([56d8be4](https://github.com/bluecords/stoatchat/commit/56d8be416b1fd283dd2bff2c114dc780c5869c1b))
+
 ## [0.24.0](https://github.com/bluecords/stoatchat/compare/v0.23.2...v0.24.0) (2026-09-07)
 
 
