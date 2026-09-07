@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/bluecords/stoatchat/compare/v0.23.2...v0.24.0) (2026-09-07)
+
+
+### Features
+
+* **policy:** let a member claim their Discord identity from the consent gate ([#61](https://github.com/bluecords/stoatchat/issues/61)) ([30427a3](https://github.com/bluecords/stoatchat/commit/30427a3a9955957b5d4bab79427b8342234491e7))
+
 ## [0.23.2](https://github.com/bluecords/stoatchat/compare/v0.23.1...v0.23.2) (2026-09-06)
 
 
