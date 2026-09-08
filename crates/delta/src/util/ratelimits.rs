@@ -43,7 +43,27 @@ impl<'a> RatelimitResolver<Request<'a>> for DeltaRatelimits {
 
                     ("channels", Some(id))
                 }
-                ("servers", Some(id), _) => ("servers", Some(id)),
+                // Confirming Discord claims is BULK ADMIN WORK, and it shares a
+                // path prefix with everything else on a server. The `servers`
+                // bucket is 5 per 10s, so an admin working the confirm queue
+                // hits 429 after five clicks - and worse, every other server
+                // call they make (fetching the queue, loading members) spends
+                // from the same five. Measured 2026-09-08 on the live server:
+                // Bunjie hit it partway through the queue with ~130 members
+                // still to confirm before the migration.
+                //
+                // Same carve-out, and same reason, as `discord_identity` below:
+                // one feature whose natural usage pattern is many small calls
+                // in a row. It is per-server, so it cannot be used to hammer
+                // the API broadly, and both routes behind it require
+                // ManageServer.
+                ("servers", Some(id), _) => {
+                    if let Some("discord-claims") = extra {
+                        return ("discord_claims", Some(id));
+                    }
+
+                    ("servers", Some(id))
+                }
                 ("auth", _, _) => {
                     if request.method() == Method::Delete {
                         ("auth_delete", None)
@@ -79,6 +99,10 @@ impl<'a> RatelimitResolver<Request<'a>> for DeltaRatelimits {
             "auth_delete" => 255,
             "default_avatar" => 255,
             "discord_identity" => 30,
+            // 60 per 10s per server. Fast enough to work the confirm queue at
+            // whatever speed a person can actually click, with headroom for the
+            // list refresh each confirm triggers.
+            "discord_claims" => 60,
             "swagger" => 100,
             "safety" => 15,
             "safety_report" => 3,
