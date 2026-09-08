@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/bluecords/stoatchat/compare/v0.24.1...v0.24.2) (2026-09-08)
+
+
+### Bug Fixes
+
+* **ratelimit:** confirming Discord claims is bulk work, not a server edit ([#65](https://github.com/bluecords/stoatchat/issues/65)) ([3903c18](https://github.com/bluecords/stoatchat/commit/3903c18005374145b825bcc29d0499079f9d4593))
+
 ## [0.24.1](https://github.com/bluecords/stoatchat/compare/v0.24.0...v0.24.1) (2026-09-07)
 
 
