@@ -15,6 +15,7 @@ mod message_clear_reactions;
 mod message_delete;
 mod message_edit;
 mod message_fetch;
+mod message_forum_reply_counts;
 mod message_mark_solution;
 mod message_pin;
 mod message_query;
@@ -41,6 +42,7 @@ pub fn routes() -> (Vec<Route>, OpenApi) {
         invite_create::create_invite,
         message_send::message_send,
         message_query::query,
+        message_forum_reply_counts::forum_reply_counts,
         message_search::search,
         message_pin::message_pin,
         message_fetch::fetch,
