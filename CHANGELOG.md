@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.24.3](https://github.com/bluecords/stoatchat/compare/v0.24.2...v0.24.3) (2026-09-12)
+
+
+### Bug Fixes
+
+* **compose:** minio/mc moved off Docker Hub to quay.io ([b7fb725](https://github.com/bluecords/stoatchat/commit/b7fb725f73b82856102bad52c6e7c581349ab367))
+* **safety:** name the people and link the message in report announcements ([#68](https://github.com/bluecords/stoatchat/issues/68)) ([a214dbb](https://github.com/bluecords/stoatchat/commit/a214dbbd258c2549f3efde60fa8ebdf194a08859))
+
 ## [0.24.2](https://github.com/bluecords/stoatchat/compare/v0.24.1...v0.24.2) (2026-09-08)
 
 
