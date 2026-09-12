@@ -44,7 +44,10 @@ services:
 
   # Create buckets for minio.
   createbuckets:
-    image: minio/mc
+    # docker.io/minio/mc is gone from Docker Hub ("pull access denied" /
+    # "repository does not exist" - confirmed 2026-09-12, not a local config
+    # issue). MinIO's client moved to quay.io; nothing else in this file did.
+    image: quay.io/minio/mc:latest
     depends_on:
       - minio
     entrypoint: >
