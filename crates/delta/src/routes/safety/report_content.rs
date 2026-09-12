@@ -210,19 +210,62 @@ async fn announce_report(db: &Database, amqp: &AMQP, report: &Report, reporter: 
         }
     }
 
-    let (kind, target) = match &report.content {
-        ReportedContent::Message { id, .. } => ("message", id),
-        ReportedContent::Server { id, .. } => ("server", id),
-        ReportedContent::User { id, .. } => ("user", id),
+    // Names, where the content lives, and a link to it - enough for a moderator
+    // to act. The first version posted bare ids only, and a message id alone
+    // cannot be opened anywhere in the client (a link needs the channel too),
+    // so a moderator reading the announcement had no way to find what was
+    // reported. The reported content itself is still deliberately NOT
+    // reproduced here: a snapshot is already stored against the report, and
+    // re-posting the material into a channel would republish whatever was bad
+    // enough to report.
+    let app = &config.hosts.app;
+    let name_of = |user: &User| match &user.display_name {
+        Some(display) => format!("{display} ({})", user.username),
+        None => user.username.clone(),
     };
 
-    // Ids and the reporter's own words only. The reported content itself is
-    // deliberately NOT reproduced here: a snapshot is already stored against
-    // the report, and re-posting the material into a channel would republish
-    // whatever was bad enough to report.
+    let (kind, target) = match &report.content {
+        ReportedContent::Message { id, .. } => {
+            let mut lines = vec![format!("Message id: `{id}`")];
+            if let Ok(reported) = db.fetch_message(id).await {
+                if let Ok(author) = db.fetch_user(&reported.author).await {
+                    lines.insert(0, format!("Posted by: {}", name_of(&author)));
+                }
+                let link = match db.fetch_channel(&reported.channel).await {
+                    Ok(reported_channel) => {
+                        let channel_name = match &reported_channel {
+                            revolt_database::Channel::TextChannel { name, .. }
+                            | revolt_database::Channel::ForumChannel { name, .. } => Some(name.clone()),
+                            _ => None,
+                        };
+                        if let Some(name) = channel_name {
+                            lines.insert(1, format!("Channel: #{name}"));
+                        }
+                        match reported_channel.server() {
+                            Some(server) => format!("{app}/server/{server}/channel/{}/{id}", reported.channel),
+                            None => format!("{app}/channel/{}/{id}", reported.channel),
+                        }
+                    }
+                    Err(_) => format!("{app}/channel/{}/{id}", reported.channel),
+                };
+                lines.push(format!("Open it: {link}"));
+            }
+            ("message", lines.join("\n"))
+        }
+        ReportedContent::Server { id, .. } => ("server", format!("Server id: `{id}`")),
+        ReportedContent::User { id, .. } => {
+            let who = match db.fetch_user(id).await {
+                Ok(reported) => format!("Member: {}\n", name_of(&reported)),
+                Err(_) => String::new(),
+            };
+            ("user", format!("{who}User id: `{id}`"))
+        }
+    };
+
     let mut content = format!(
-        "🚩 New {kind} report\n\nReported by: <@{}>\nTarget {kind} id: `{target}`\nReport id: `{}`",
-        reporter.id, report.id
+        "🚩 New {kind} report\n\nReported by: {}\n{target}\nReport id: `{}`",
+        name_of(reporter),
+        report.id
     );
 
     if !report.additional_context.is_empty() {
