@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.5](https://github.com/bluecords/stoatchat/compare/v0.24.4...v0.24.5) (2026-09-13)
+
+
+### Bug Fixes
+
+* **pushd:** stop mass-mention/role-mention push from failing outright ([#71](https://github.com/bluecords/stoatchat/issues/71)) ([114208a](https://github.com/bluecords/stoatchat/commit/114208af3002b47109968a4ef6a689ce9e8813fb))
+
 ## [0.24.4](https://github.com/bluecords/stoatchat/compare/v0.24.3...v0.24.4) (2026-09-13)
 
 
