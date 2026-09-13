@@ -62,6 +62,19 @@ impl<'a> RatelimitResolver<Request<'a>> for DeltaRatelimits {
                         return ("discord_claims", Some(id));
                     }
 
+                    // Member management - roles, timeouts, nicknames, the member
+                    // list - is also many small calls in a row. Sharing the
+                    // 5-per-10s `servers` bucket meant the Members page spent
+                    // most of it just loading, so after one or two role ticks
+                    // every further save came back 429 and was dropped: the
+                    // admin saw the box ticked and the role never saved
+                    // (measured 2026-09-12 on the dev sandbox; Bunjie had been
+                    // watching grants "keep changing"). Per-server, and every
+                    // write behind it is still permission-checked.
+                    if let Some("members") = extra {
+                        return ("server_members", Some(id));
+                    }
+
                     ("servers", Some(id))
                 }
                 ("auth", _, _) => {
@@ -103,6 +116,9 @@ impl<'a> RatelimitResolver<Request<'a>> for DeltaRatelimits {
             // whatever speed a person can actually click, with headroom for the
             // list refresh each confirm triggers.
             "discord_claims" => 60,
+            // 60 per 10s per server: working down the Members page at clicking
+            // speed, plus the list refresh after each save.
+            "server_members" => 60,
             "swagger" => 100,
             "safety" => 15,
             "safety_report" => 3,
