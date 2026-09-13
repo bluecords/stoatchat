@@ -124,7 +124,20 @@ pub async fn render_notification_content(
         );
     }
 
-    Ok(body.to_string())
+    // The web client tags each Unicode emoji with an invisible Private-Use-Area
+    // marker (U+E0E0-U+E0E7 - see nac-web's UnicodeEmoji.tsx UNICODE_EMOJI_PACK_PUA)
+    // so it knows which icon pack to render it with, and stores that marker as
+    // literal message content rather than transient render state. Nothing outside
+    // that one component knows to strip it, so it reached push notifications
+    // verbatim; with no glyph mapped, Android's tray fell back to a stray CJK
+    // character in front of the emoji itself (e.g. real content "🥰" showed as
+    // "蔬🥰" in the notification shade).
+    let body: String = body
+        .chars()
+        .filter(|c| !('\u{E0E0}'..='\u{E0E7}').contains(c))
+        .collect();
+
+    Ok(body)
 }
 
 async fn get_items<F>(
