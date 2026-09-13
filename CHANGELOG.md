@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.4](https://github.com/bluecords/stoatchat/compare/v0.24.3...v0.24.4) (2026-09-13)
+
+
+### Bug Fixes
+
+* **ratelimit:** member management gets its own bucket ([#69](https://github.com/bluecords/stoatchat/issues/69)) ([ea86e40](https://github.com/bluecords/stoatchat/commit/ea86e40004ab529e17db5c135f39ea2d985b5857))
+
 ## [0.24.3](https://github.com/bluecords/stoatchat/compare/v0.24.2...v0.24.3) (2026-09-12)
 
 
