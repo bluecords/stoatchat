@@ -101,7 +101,10 @@ pub enum ChannelPermission {
     MentionRoles = 1 << 38,
 
     // * Misc. permissions
-    // % Bits 39 to 52: free area
+    /// Use the animated (GIF) emoji pack in Appearance settings
+    UseAnimatedEmoji = 1 << 40,
+
+    // % Bits 41 to 52: free area
     // % Bits 53 to 64: do not use
 
     // * Grant all permissions
