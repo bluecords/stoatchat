@@ -1,5 +1,7 @@
 #[cfg(feature = "mongodb")]
-use ::mongodb::{ClientSession, SessionCursor};
+use ::mongodb::Cursor;
+#[cfg(feature = "mongodb")]
+use futures::StreamExt;
 
 use revolt_result::Result;
 
@@ -12,11 +14,16 @@ mod reference;
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum ChunkedServerMembersGenerator {
+    // Plain (session-less) cursor - deliberately NOT a MongoDB multi-document
+    // transaction / SessionCursor. Those require a replica set, which this
+    // deployment does not run (confirmed: `rs.status()` -> "not running with
+    // --replSet"), so every mass-mention and role-mention push notification
+    // failed outright with a DatabaseError on "server_members" find. A plain
+    // cursor gives up snapshot consistency across the paginated fetch, which
+    // is an acceptable trade for a best-effort notification fan-out - it is
+    // not a source of truth read.
     #[cfg(feature = "mongodb")]
-    MongoDb {
-        session: ClientSession,
-        cursor: Option<SessionCursor<Member>>,
-    },
+    MongoDb { cursor: Option<Cursor<Member>> },
 
     Reference {
         offset: i32,
@@ -26,9 +33,8 @@ pub enum ChunkedServerMembersGenerator {
 
 impl ChunkedServerMembersGenerator {
     #[cfg(feature = "mongodb")]
-    pub fn new_mongo(session: ClientSession, cursor: SessionCursor<Member>) -> Self {
+    pub fn new_mongo(cursor: Cursor<Member>) -> Self {
         ChunkedServerMembersGenerator::MongoDb {
-            session,
             cursor: Some(cursor),
         }
     }
@@ -43,9 +49,9 @@ impl ChunkedServerMembersGenerator {
     pub async fn next(&mut self) -> Option<Member> {
         match self {
             #[cfg(feature = "mongodb")]
-            ChunkedServerMembersGenerator::MongoDb { session, cursor } => {
+            ChunkedServerMembersGenerator::MongoDb { cursor } => {
                 if let Some(cursor) = cursor {
-                    let value = cursor.next(session).await;
+                    let value = cursor.next().await;
                     value.map(|val| val.expect("Failed to fetch the next member"))
                 } else {
                     warn!("Attempted to access a (MongoDb) server member generator without first setting a cursor");

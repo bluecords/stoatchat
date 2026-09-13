@@ -1,7 +1,6 @@
 use bson::Document;
 use futures::StreamExt;
 use iso8601_timestamp::Timestamp;
-use mongodb::options::ReadConcern;
 use revolt_result::Result;
 
 use crate::{FieldsMember, Member, MemberCompositeKey, PartialMember};
@@ -89,34 +88,29 @@ impl AbstractServerMembers for MongoDb {
 
     /// Fetch all members in a server as a generator.
     /// Uses config key pushd.mass_mention_chunk_size as the batch size.
+    ///
+    /// Deliberately a plain (session-less) cursor, not a multi-document
+    /// transaction: this deployment's MongoDB is a standalone instance, not a
+    /// replica set, so `start_transaction()` fails on every call - every
+    /// mass-mention push notification errored on this exact query
+    /// (`server_members` find) until this was found and fixed. See the note
+    /// on `ChunkedServerMembersGenerator::MongoDb` for the consistency trade.
     async fn fetch_all_members_chunked(
         &self,
         server_id: &str,
     ) -> Result<ChunkedServerMembersGenerator> {
         let config = revolt_config::config().await;
 
-        let mut session = self
-            .start_session()
-            .await
-            .map_err(|_| create_database_error!("start_session", COL))?;
-
-        session
-            .start_transaction()
-            .read_concern(ReadConcern::snapshot())
-            .await
-            .map_err(|_| create_database_error!("start_transaction", COL))?;
-
         let cursor = self
             .col::<Member>(COL)
             .find(doc! {
                 "_id.server": server_id
             })
-            .session(&mut session)
             .batch_size(config.pushd.mass_mention_chunk_size as u32)
             .await
             .map_err(|_| create_database_error!("find", COL))?;
 
-        Ok(ChunkedServerMembersGenerator::new_mongo(session, cursor))
+        Ok(ChunkedServerMembersGenerator::new_mongo(cursor))
     }
 
     async fn fetch_all_members_with_roles(
@@ -143,6 +137,9 @@ impl AbstractServerMembers for MongoDb {
             .await)
     }
 
+    /// Same fix as `fetch_all_members_chunked` above, and for the same
+    /// reason: no replica set on this deployment means no transactions, so
+    /// role-mention push notifications failed identically.
     async fn fetch_all_members_with_roles_chunked(
         &self,
         server_id: &str,
@@ -150,29 +147,17 @@ impl AbstractServerMembers for MongoDb {
     ) -> Result<ChunkedServerMembersGenerator> {
         let config = revolt_config::config().await;
 
-        let mut session = self
-            .start_session()
-            .await
-            .map_err(|_| create_database_error!("start_session", COL))?;
-
-        session
-            .start_transaction()
-            .read_concern(ReadConcern::snapshot())
-            .await
-            .map_err(|_| create_database_error!("start_transaction", COL))?;
-
         let cursor = self
             .col::<Member>(COL)
             .find(doc! {
                 "_id.server": server_id,
                 "roles": {"$in": roles}
             })
-            .session(&mut session)
             .batch_size(config.pushd.mass_mention_chunk_size as u32)
             .await
             .map_err(|_| create_database_error!("find", COL))?;
 
-        return Ok(ChunkedServerMembersGenerator::new_mongo(session, cursor));
+        Ok(ChunkedServerMembersGenerator::new_mongo(cursor))
     }
 
     /// Fetch all memberships for a user
