@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.25.0](https://github.com/bluecords/stoatchat/compare/v0.24.5...v0.25.0) (2026-09-13)
+
+
+### Features
+
+* **permissions:** add UseAnimatedEmoji permission bit (40) ([45cdaca](https://github.com/bluecords/stoatchat/commit/45cdaca297856e737c7a3587130b32dd2b89b027))
+
+
+### Bug Fixes
+
+* **pushd:** strip emoji-pack PUA marker from notification body ([#75](https://github.com/bluecords/stoatchat/issues/75)) ([6fb2350](https://github.com/bluecords/stoatchat/commit/6fb2350266b80e328126803be98fb5eb1ccc103d))
+
 ## [0.24.5](https://github.com/bluecords/stoatchat/compare/v0.24.4...v0.24.5) (2026-09-13)
 
 
