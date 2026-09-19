@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/bluecords/stoatchat/compare/v0.26.0...v0.27.0) (2026-09-19)
+
+
+### Features
+
+* **messages:** let an author add uploaded files to a message when editing it ([#78](https://github.com/bluecords/stoatchat/issues/78)) ([2ff25e8](https://github.com/bluecords/stoatchat/commit/2ff25e81b4572f6c8bf680f732a3e94805b7a955))
+
 ## [0.26.0](https://github.com/bluecords/stoatchat/compare/v0.25.0...v0.26.0) (2026-09-19)
 
 
