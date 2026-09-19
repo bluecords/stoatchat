@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/bluecords/stoatchat/compare/v0.25.0...v0.26.0) (2026-09-19)
+
+
+### Features
+
+* **permissions:** add VerifyMembers so moderators can verify members without ManageServer ([#76](https://github.com/bluecords/stoatchat/issues/76)) ([1f2ba8a](https://github.com/bluecords/stoatchat/commit/1f2ba8a80482b729ea1bb3bf4e5902e3cfe3b3d4))
+
 ## [0.25.0](https://github.com/bluecords/stoatchat/compare/v0.24.5...v0.25.0) (2026-09-13)
 
 
