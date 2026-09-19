@@ -144,4 +144,22 @@ impl AbstractDiscordIdentity for MongoDb {
     async fn delete_discord_identity(&self, discord_id: &str) -> Result<()> {
         query!(self, delete_one_by_id, IDENTITIES, discord_id).map(|_| ())
     }
+
+    async fn delete_unconfirmed_discord_identity(&self, discord_id: &str) -> Result<bool> {
+        // Unconfirmed means "not carrying BOTH stamps" (see `is_confirmed`); a
+        // `null` filter also matches a missing field.
+        query!(
+            self,
+            delete_one,
+            IDENTITIES,
+            doc! {
+                "_id": discord_id,
+                "$or": [
+                    { "confirmed_by": null },
+                    { "confirmed_at": null }
+                ]
+            }
+        )
+        .map(|result| result.deleted_count > 0)
+    }
 }

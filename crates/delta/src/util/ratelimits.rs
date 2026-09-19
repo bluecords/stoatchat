@@ -56,7 +56,7 @@ impl<'a> RatelimitResolver<Request<'a>> for DeltaRatelimits {
                 // one feature whose natural usage pattern is many small calls
                 // in a row. It is per-server, so it cannot be used to hammer
                 // the API broadly, and both routes behind it require
-                // ManageServer.
+                // ManageServer or VerifyMembers.
                 ("servers", Some(id), _) => {
                     if let Some("discord-claims") = extra {
                         return ("discord_claims", Some(id));
