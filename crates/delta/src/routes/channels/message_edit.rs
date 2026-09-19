@@ -2,7 +2,7 @@ use iso8601_timestamp::Timestamp;
 use revolt_database::{
     tasks,
     util::{permissions::DatabasePermissionQuery, reference::Reference},
-    Channel, Database, Message, PartialMessage, User,
+    Channel, Database, File, Message, PartialMessage, User,
 };
 use revolt_models::v0::{self, Embed};
 use revolt_permissions::{calculate_channel_permissions, ChannelPermission};
@@ -128,11 +128,45 @@ pub async fn edit(
         }
     }
 
+    // 5. Append any newly uploaded attachments. Same rules as sending: the
+    //    UploadFiles permission, and the combined count stays within the
+    //    sender's limit. Existing attachments are never removed or replaced.
+    //    Done last so a rejected edit never claims files it then discards.
+    if let Some(new_ids) = edit.attachments.as_ref().filter(|v| !v.is_empty()) {
+        permissions.throw_if_lacking_channel_permission(ChannelPermission::UploadFiles)?;
+
+        let mut unique = std::collections::HashSet::new();
+        if !new_ids.iter().all(|id| unique.insert(id)) {
+            return Err(create_error!(InvalidProperty));
+        }
+
+        let limits = user.limits().await;
+        let mut attachments = message.attachments.clone().unwrap_or_default();
+        if attachments.len() + new_ids.len() > limits.message_attachments {
+            return Err(create_error!(TooManyAttachments {
+                max: limits.message_attachments,
+            }));
+        }
+
+        for attachment_id in new_ids {
+            attachments.push(File::use_attachment(db, attachment_id, &message.id, &user.id).await?);
+        }
+
+        partial.attachments = Some(attachments);
+    }
+
     message.update(db, partial, vec![]).await?;
 
-    // Queue up a task for processing embeds if the we have sufficient permissions
+    // Queue up a task for processing embeds if the we have sufficient permissions.
+    // Step 2 cleared the auto-generated embeds, so an edit that leaves the text
+    // alone (e.g. only adds files) must regenerate them from the existing content
+    // or link previews would vanish.
     if permissions.has_channel_permission(ChannelPermission::SendEmbeds) {
-        if let Some(content) = edit.content {
+        if let Some(content) = edit
+            .content
+            .or_else(|| message.content.clone())
+            .filter(|c| !c.is_empty())
+        {
             tasks::process_embeds::queue(
                 message.channel.to_string(),
                 message.id.to_string(),

@@ -378,6 +378,11 @@ auto_derived!(
         /// Embeds to include in the message
         #[cfg_attr(feature = "validator", validate(length(min = 0, max = 10)))]
         pub embeds: Option<Vec<SendableEmbed>>,
+        /// Attachment IDs to add to this message, uploaded to Autumn the same
+        /// way as when sending. They are appended to any existing attachments;
+        /// the combined total may not exceed the sender's attachment limit.
+        #[cfg_attr(feature = "validator", validate(length(max = 128)))]
+        pub attachments: Option<Vec<String>>,
         /// New tags for this forum post. Only valid on the root message of a
         /// `ForumChannel` post; must be a subset of the channel's `allowed_tags`.
         /// Pass an empty array to clear all tags.
