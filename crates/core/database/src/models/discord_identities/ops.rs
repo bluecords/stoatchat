@@ -58,4 +58,10 @@ pub trait AbstractDiscordIdentity: Sync + Send {
 
     /// Remove a claim
     async fn delete_discord_identity(&self, discord_id: &str) -> Result<()>;
+
+    /// Remove a claim only if it is still unconfirmed, as one atomic step.
+    /// Returns whether a claim was removed. Used where the caller is only
+    /// allowed to reject unconfirmed claims, so a confirmation landing between
+    /// the permission check and the delete cannot be undone by accident.
+    async fn delete_unconfirmed_discord_identity(&self, discord_id: &str) -> Result<bool>;
 }

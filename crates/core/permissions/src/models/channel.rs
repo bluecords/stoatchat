@@ -104,7 +104,12 @@ pub enum ChannelPermission {
     /// Use the animated (GIF) emoji pack in Appearance settings
     UseAnimatedEmoji = 1 << 40,
 
-    // % Bits 41 to 52: free area
+    // * Member verification
+    /// Confirm members' Discord identities and see how members joined, without
+    /// holding ManageServer
+    VerifyMembers = 1 << 41,
+
+    // % Bits 42 to 52: free area
     // % Bits 53 to 64: do not use
 
     // * Grant all permissions

@@ -100,4 +100,18 @@ impl AbstractDiscordIdentity for ReferenceDb {
         self.discord_identities.lock().await.remove(discord_id);
         Ok(())
     }
+
+    async fn delete_unconfirmed_discord_identity(&self, discord_id: &str) -> Result<bool> {
+        let mut identities = self.discord_identities.lock().await;
+        if identities
+            .get(discord_id)
+            .map(|identity| !identity.is_confirmed())
+            .unwrap_or(false)
+        {
+            identities.remove(discord_id);
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
 }

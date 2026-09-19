@@ -1,9 +1,5 @@
-use revolt_database::{
-    util::{permissions::DatabasePermissionQuery, reference::Reference},
-    Database, User,
-};
+use revolt_database::{util::reference::Reference, Database, User};
 use revolt_models::v0;
-use revolt_permissions::{calculate_server_permissions, ChannelPermission};
 use revolt_result::Result;
 use rocket::{serde::json::Json, State};
 
@@ -35,11 +31,8 @@ pub async fn attribution(
     user: User,
     target: Reference<'_>,
 ) -> Result<Json<Vec<v0::MemberAttribution>>> {
+    super::discord_claims::require_verify_access(db, &user, &target).await?;
     let server = target.as_server(db).await?;
-    let mut query = DatabasePermissionQuery::new(db, &user).server(&server);
-    calculate_server_permissions(&mut query)
-        .await
-        .throw_if_lacking_channel_permission(ChannelPermission::ManageServer)?;
 
     Ok(Json(
         db.fetch_all_members(&server.id)
