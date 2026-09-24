@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/bluecords/stoatchat/compare/v0.27.0...v0.28.0) (2026-09-24)
+
+
+### Features
+
+* **push:** decide push per device, not per user ([#80](https://github.com/bluecords/stoatchat/issues/80)) ([5b9e77a](https://github.com/bluecords/stoatchat/commit/5b9e77a38d68fb33c961ea12441e89432156d914))
+
 ## [0.27.0](https://github.com/bluecords/stoatchat/compare/v0.26.0...v0.27.0) (2026-09-19)
 
 
