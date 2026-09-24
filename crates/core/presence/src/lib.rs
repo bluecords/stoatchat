@@ -84,6 +84,58 @@ async fn delete_session_internal(user_id: &str, session_id: u32, skip_region: bo
     }
 }
 
+/// How long a device stays marked as connected without a refresh.
+/// Bonfire refreshes well inside this, so a crashed node can only
+/// suppress a device's push for this long.
+pub static CONNECTED_SESSION_TTL: usize = 90;
+
+fn connected_session_key(auth_session_id: &str) -> String {
+    format!("connected_session:{auth_session_id}")
+}
+
+/// Mark a login session (a device) as having a live connection. Each socket
+/// adds its own presence id to a set, so two tabs on one login - or a
+/// reconnect racing the old socket's close - cannot clear each other.
+pub async fn mark_session_connected(auth_session_id: &str, socket_id: u32) {
+    // Bots authenticate without a login session.
+    if auth_session_id.is_empty() {
+        return;
+    }
+
+    if let Ok(mut conn) = get_connection().await {
+        let key = connected_session_key(auth_session_id);
+        let _: Option<()> = conn.sadd(&key, socket_id).await.ok();
+        let _: Option<()> = conn.expire(&key, CONNECTED_SESSION_TTL).await.ok();
+    }
+}
+
+/// Remove this socket from a login session's live connections
+pub async fn mark_session_disconnected(auth_session_id: &str, socket_id: u32) {
+    if auth_session_id.is_empty() {
+        return;
+    }
+
+    if let Ok(mut conn) = get_connection().await {
+        let _: Option<()> = conn
+            .srem(connected_session_key(auth_session_id), socket_id)
+            .await
+            .ok();
+    }
+}
+
+/// Check whether a login session (a device) currently has a live connection.
+/// Fails open: if Redis is unreachable the device is treated as not
+/// connected, so it still gets its push.
+pub async fn is_session_connected(auth_session_id: &str) -> bool {
+    if let Ok(mut conn) = get_connection().await {
+        conn.exists(connected_session_key(auth_session_id))
+            .await
+            .unwrap_or(false)
+    } else {
+        false
+    }
+}
+
 /// Check whether a given user ID is online
 pub async fn is_online(user_id: &str) -> bool {
     if let Ok(mut conn) = get_connection().await {

@@ -345,12 +345,17 @@ impl AbstractUsers for MongoDb {
             .map_err(|_| create_database_error!("insert_one", "erasure_log"))
     }
 
-    /// Remove push subscription for a session by session id (TODO: remove)
-    async fn remove_push_subscription_by_session_id(&self, session_id: &str) -> Result<()> {
+    /// Remove a session's push subscription if it is still the given one
+    async fn remove_push_subscription_if_current(
+        &self,
+        session_id: &str,
+        subscription_auth: &str,
+    ) -> Result<()> {
         self.col::<User>("sessions")
             .update_one(
                 doc! {
-                    "_id": session_id
+                    "_id": session_id,
+                    "subscription.auth": subscription_auth
                 },
                 doc! {
                     "$unset": {

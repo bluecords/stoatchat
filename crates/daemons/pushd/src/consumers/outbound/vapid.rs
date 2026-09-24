@@ -76,6 +76,8 @@ impl Consumer for VapidOutboundConsumer {
 
     async fn consume(&self, delivery: Delivery) -> Result<()> {
         let payload: PayloadToService = serde_json::from_slice(&delivery.data)?;
+        // Kept for pruning: the token is moved into the request below.
+        let subscription_auth = payload.token.clone();
 
         let subscription = SubscriptionInfo {
             endpoint: payload
@@ -191,7 +193,7 @@ impl Consumer for VapidOutboundConsumer {
 
                 if let Err(err) = self
                     .db
-                    .remove_push_subscription_by_session_id(&payload.session_id)
+                    .remove_push_subscription_if_current(&payload.session_id, &subscription_auth)
                     .await
                 {
                     revolt_config::capture_error(&err);

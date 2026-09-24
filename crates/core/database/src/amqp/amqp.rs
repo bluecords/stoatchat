@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,7 +11,6 @@ use lapin::{
     Connection, ConnectionProperties, Error as AMQPError,
 };
 use revolt_models::v0::PushNotification;
-use revolt_presence::filter_online;
 use revolt_result::Result;
 
 use serde_json::to_string;
@@ -230,11 +228,9 @@ impl AMQP {
 
         let config = revolt_config::config().await;
 
-        let online_ids = filter_online(&recipients).await;
-        let recipients = (&recipients.into_iter().collect::<HashSet<String>>() - &online_ids)
-            .into_iter()
-            .collect::<Vec<String>>();
-
+        // Online-ness is decided per device in pushd, which skips only the
+        // sessions that are connected right now. Filtering whole users here
+        // meant one open tab anywhere silenced every other device.
         let payload = MessageSentPayload {
             notification: payload,
             users: recipients,
