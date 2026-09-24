@@ -93,24 +93,33 @@ fn connected_session_key(auth_session_id: &str) -> String {
     format!("connected_session:{auth_session_id}")
 }
 
-/// Mark a login session (a device) as having a live connection
-pub async fn mark_session_connected(auth_session_id: &str) {
+/// Mark a login session (a device) as having a live connection. Each socket
+/// adds its own presence id to a set, so two tabs on one login - or a
+/// reconnect racing the old socket's close - cannot clear each other.
+pub async fn mark_session_connected(auth_session_id: &str, socket_id: u32) {
+    // Bots authenticate without a login session.
+    if auth_session_id.is_empty() {
+        return;
+    }
+
     if let Ok(mut conn) = get_connection().await {
-        let _: Option<()> = conn
-            .set_ex(
-                connected_session_key(auth_session_id),
-                1u8,
-                CONNECTED_SESSION_TTL,
-            )
-            .await
-            .ok();
+        let key = connected_session_key(auth_session_id);
+        let _: Option<()> = conn.sadd(&key, socket_id).await.ok();
+        let _: Option<()> = conn.expire(&key, CONNECTED_SESSION_TTL).await.ok();
     }
 }
 
-/// Clear a login session's live-connection marker
-pub async fn mark_session_disconnected(auth_session_id: &str) {
+/// Remove this socket from a login session's live connections
+pub async fn mark_session_disconnected(auth_session_id: &str, socket_id: u32) {
+    if auth_session_id.is_empty() {
+        return;
+    }
+
     if let Ok(mut conn) = get_connection().await {
-        let _: Option<()> = conn.del(connected_session_key(auth_session_id)).await.ok();
+        let _: Option<()> = conn
+            .srem(connected_session_key(auth_session_id), socket_id)
+            .await
+            .ok();
     }
 }
 

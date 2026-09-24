@@ -159,7 +159,7 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
 
     // The login session this socket belongs to - i.e. the device. pushd skips
     // push for devices marked connected, so they are not notified twice.
-    let auth_session_id = session_id;
+    let auth_session_id = state.session_id.clone();
 
     // Create presence session.
     let (first_session, session_id) = create_session(&user_id, 0).await;
@@ -216,7 +216,7 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
         // the moment the connection ends.
         let keep_marked = async {
             loop {
-                mark_session_connected(&auth_session_id).await;
+                mark_session_connected(&auth_session_id, session_id).await;
                 async_std::task::sleep(std::time::Duration::from_secs(30)).await;
             }
         }
@@ -229,7 +229,7 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
         }
     }
 
-    mark_session_disconnected(&auth_session_id).await;
+    mark_session_disconnected(&auth_session_id, session_id).await;
     // Clean up presence session.
     let last_session = delete_session(&user_id, session_id).await;
 

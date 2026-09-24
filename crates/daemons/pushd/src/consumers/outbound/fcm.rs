@@ -168,6 +168,8 @@ impl Consumer for FcmOutboundConsumer {
 
     async fn consume(&self, delivery: Delivery) -> Result<()> {
         let payload: PayloadToService = serde_json::from_slice(&delivery.data)?;
+        // Kept for pruning: the token is moved into the request below.
+        let subscription_auth = payload.token.clone();
 
         #[allow(clippy::needless_late_init)]
         let resp: Result<Message, FcmError>;
@@ -278,7 +280,7 @@ impl Consumer for FcmOutboundConsumer {
             Err(FcmError::Auth) => {
                 if let Err(err) = self
                     .db
-                    .remove_push_subscription_if_current(&payload.session_id, &payload.token)
+                    .remove_push_subscription_if_current(&payload.session_id, &subscription_auth)
                     .await
                 {
                     revolt_config::capture_error(&err);
@@ -309,7 +311,7 @@ impl Consumer for FcmOutboundConsumer {
 
                 if let Err(err) = self
                     .db
-                    .remove_push_subscription_if_current(&payload.session_id, &payload.token)
+                    .remove_push_subscription_if_current(&payload.session_id, &subscription_auth)
                     .await
                 {
                     revolt_config::capture_error(&err);
