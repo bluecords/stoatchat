@@ -44,17 +44,21 @@ services:
 
   # Create buckets for minio.
   createbuckets:
-    # docker.io/minio/mc is gone from Docker Hub ("pull access denied" /
-    # "repository does not exist" - confirmed 2026-09-12, not a local config
-    # issue). MinIO's client moved to quay.io; nothing else in this file did.
-    image: quay.io/minio/mc:latest
+    # MinIO's own client image is no longer publicly pullable: docker.io/minio/mc
+    # was removed (2026-09-12) and quay.io/minio/mc now returns 401 (2026-09-24),
+    # which failed every CI run at docker:start. The bucket only needs an S3
+    # "make bucket", so use AWS's public CLI image against MinIO instead.
+    image: amazon/aws-cli:latest
     depends_on:
       - minio
+    environment:
+      AWS_ACCESS_KEY_ID: minioautumn
+      AWS_SECRET_ACCESS_KEY: minioautumn
+      AWS_DEFAULT_REGION: minio
     entrypoint: >
-      /bin/sh -c "while ! /usr/bin/mc ready minio; do
-        /usr/bin/mc alias set minio http://minio:9000 minioautumn minioautumn;
+      /bin/sh -c "until aws --endpoint-url http://minio:9000 s3 ls >/dev/null 2>&1; do
         echo 'Waiting minio...' && sleep 1;
-      done; /usr/bin/mc mb minio/revolt-uploads; exit 0;"
+      done; aws --endpoint-url http://minio:9000 s3 mb s3://revolt-uploads || true; exit 0;"
 
   # Rabbit
   rabbit:
