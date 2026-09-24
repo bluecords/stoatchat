@@ -37,6 +37,11 @@ impl MassMessageConsumer {
         {
             let config = revolt_config::config().await;
             for session in sessions {
+                // This device is open right now and gets the message live.
+                if revolt_presence::is_session_connected(&session.id).await {
+                    continue;
+                }
+
                 if let Some(sub) = session.subscription {
                     let mut sendable = PayloadToService {
                         notification: PayloadKind::MessageNotification(push.clone()),
@@ -164,20 +169,15 @@ impl Consumer for MassMessageConsumer {
                             revolt_config::capture_error(&err);
                         }
 
-                        // ignore anyone in this list
-                        let online_users = revolt_presence::filter_online(&userids).await;
+                        // Connected devices are skipped per session in
+                        // fire_notification_for_users, not per user here.
                         let target_users: Vec<String> = userids
                             .iter()
-                            .filter(|id| {
-                                !online_users.contains(*id) && !existing_mentions.contains(*id)
-                            })
+                            .filter(|id| !existing_mentions.contains(*id))
                             .cloned()
                             .collect();
 
-                        debug!(
-                            "Userids after filter: {:?} (online: {:?}",
-                            target_users, online_users
-                        );
+                        debug!("Userids after filter: {:?}", target_users);
 
                         self.fire_notification_for_users(&push, &target_users)
                             .await?;
@@ -224,14 +224,7 @@ impl Consumer for MassMessageConsumer {
 
                         debug!("viewing members: {:?}", viewing_members);
 
-                        let online = revolt_presence::filter_online(&viewing_members).await;
-                        debug!("online: {:?}", online);
-
-                        let targets: Vec<String> = viewing_members
-                            .iter()
-                            .filter(|m| !online.contains(*m))
-                            .cloned()
-                            .collect();
+                        let targets = viewing_members;
 
                         debug!("targets: {:?}", targets);
 

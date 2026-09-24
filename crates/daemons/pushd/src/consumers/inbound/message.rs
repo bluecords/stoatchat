@@ -54,6 +54,11 @@ impl Consumer for MessageConsumer {
         {
             let config = revolt_config::config().await;
             for session in sessions {
+                // This device is open right now and gets the message live.
+                if revolt_presence::is_session_connected(&session.id).await {
+                    continue;
+                }
+
                 if let Some(sub) = session.subscription {
                     let mut sendable = PayloadToService {
                         notification: PayloadKind::MessageNotification(

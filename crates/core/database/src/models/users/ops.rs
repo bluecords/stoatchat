@@ -76,7 +76,14 @@ pub trait AbstractUsers: Sync + Send {
     async fn record_erasure(&self, report: &ErasureReport) -> Result<()>;
 
     /// Remove push subscription for a session by session id (TODO: remove)
-    async fn remove_push_subscription_by_session_id(&self, session_id: &str) -> Result<()>;
+    /// Remove a session's push subscription, but only if it is still the one
+    /// identified by `subscription_auth` - a failure report for a replaced
+    /// subscription must not delete its replacement.
+    async fn remove_push_subscription_if_current(
+        &self,
+        session_id: &str,
+        subscription_auth: &str,
+    ) -> Result<()>;
 
     async fn update_session_last_seen(&self, session_id: &str, when: Timestamp) -> Result<()>;
 }

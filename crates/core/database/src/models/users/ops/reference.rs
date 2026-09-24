@@ -176,7 +176,11 @@ impl AbstractUsers for ReferenceDb {
     }
 
     /// Remove push subscription for a session by session id (TODO: remove)
-    async fn remove_push_subscription_by_session_id(&self, _session_id: &str) -> Result<()> {
+    async fn remove_push_subscription_if_current(
+        &self,
+        _session_id: &str,
+        _subscription_auth: &str,
+    ) -> Result<()> {
         todo!()
     }
 

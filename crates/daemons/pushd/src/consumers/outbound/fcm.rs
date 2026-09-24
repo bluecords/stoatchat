@@ -278,7 +278,7 @@ impl Consumer for FcmOutboundConsumer {
             Err(FcmError::Auth) => {
                 if let Err(err) = self
                     .db
-                    .remove_push_subscription_by_session_id(&payload.session_id)
+                    .remove_push_subscription_if_current(&payload.session_id, &payload.token)
                     .await
                 {
                     revolt_config::capture_error(&err);
@@ -309,7 +309,7 @@ impl Consumer for FcmOutboundConsumer {
 
                 if let Err(err) = self
                     .db
-                    .remove_push_subscription_by_session_id(&payload.session_id)
+                    .remove_push_subscription_if_current(&payload.session_id, &payload.token)
                     .await
                 {
                     revolt_config::capture_error(&err);

@@ -20,7 +20,9 @@ use revolt_database::{
     iso8601_timestamp::Timestamp,
     Database, User, UserHint,
 };
-use revolt_presence::{create_session, delete_session};
+use revolt_presence::{
+    create_session, delete_session, mark_session_connected, mark_session_disconnected,
+};
 
 use async_std::{
     net::TcpStream,
@@ -155,6 +157,10 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
         }
     }
 
+    // The login session this socket belongs to - i.e. the device. pushd skips
+    // push for devices marked connected, so they are not notified twice.
+    let auth_session_id = session_id;
+
     // Create presence session.
     let (first_session, session_id) = create_session(&user_id, 0).await;
 
@@ -201,8 +207,29 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
             kill_signal_1_s,
         );
 
-        join!(listener, worker);
+        let connection = async {
+            join!(listener, worker);
+        }
+        .fuse();
+
+        // Refresh well inside CONNECTED_SESSION_TTL. Dropped (and so stopped)
+        // the moment the connection ends.
+        let keep_marked = async {
+            loop {
+                mark_session_connected(&auth_session_id).await;
+                async_std::task::sleep(std::time::Duration::from_secs(30)).await;
+            }
+        }
+        .fuse();
+
+        pin_mut!(connection, keep_marked);
+        select! {
+            _ = connection => {},
+            _ = keep_marked => {},
+        }
     }
+
+    mark_session_disconnected(&auth_session_id).await;
     // Clean up presence session.
     let last_session = delete_session(&user_id, session_id).await;
 
