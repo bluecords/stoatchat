@@ -37,6 +37,23 @@ use crate::events::state::{State, SubscriptionStateChange};
 use revolt_models::v0;
 
 type WsReader = SplitStream<WebSocketStream<TcpStream>>;
+
+/// How often the server sends a WebSocket-level Ping to every client.
+///
+/// Browsers answer these in their network stack, so a background tab whose
+/// JavaScript timers Chrome has throttled to about once a minute still
+/// answers. Without them, a quiet background tab left the connection silent
+/// for 60s, the proxy in front of us (nginx `proxy_read_timeout`, default
+/// 60s) cut it, and the client showed "Reconnecting" - hundreds of times a
+/// day for anyone who leaves NAC open on a computer.
+const SERVER_PING_INTERVAL: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Close a connection that has sent us nothing at all - not even a Pong to
+/// our Ping - for this long. The proxy used to do this for us at 60s; keeping
+/// the same limit means a dead phone socket still stops counting as
+/// "connected" (and so stops suppressing its push notifications) as fast as
+/// before.
+const CLIENT_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 type WsWriter = SplitSink<WebSocketStream<TcpStream>, async_tungstenite::tungstenite::Message>;
 
 /// Start a new WebSocket client worker given access to the database,
@@ -222,10 +239,28 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
         }
         .fuse();
 
-        pin_mut!(connection, keep_marked);
+        // Never finishes on its own: a failed send is ignored, and a dead
+        // socket is closed by the worker's read error or CLIENT_IDLE_TIMEOUT.
+        // Ending the select from here would drop the listener mid-await and
+        // leak its Redis subscriber (it never reaches `subscriber.quit()`).
+        let heartbeat = async {
+            loop {
+                async_std::task::sleep(SERVER_PING_INTERVAL).await;
+                write
+                    .lock()
+                    .await
+                    .send(async_tungstenite::tungstenite::Message::Ping(vec![]))
+                    .await
+                    .ok();
+            }
+        }
+        .fuse();
+
+        pin_mut!(connection, keep_marked, heartbeat);
         select! {
             _ = connection => {},
             _ = keep_marked => {},
+            _ = heartbeat => {},
         }
     }
 
@@ -490,7 +525,7 @@ async fn worker(
     let revolt_config = revolt_config::config().await;
 
     loop {
-        let t1 = read.try_next().fuse();
+        let t1 = async_std::future::timeout(CLIENT_IDLE_TIMEOUT, read.try_next()).fuse();
         let t2 = kill_signal_r.recv().fuse();
 
         pin_mut!(t1, t2);
@@ -500,6 +535,11 @@ async fn worker(
                 return;
             },
             result = t1 => {
+                let Ok(result) = result else {
+                    info!("Closing {addr:?}: nothing received for {CLIENT_IDLE_TIMEOUT:?}");
+                    return;
+                };
+
                 let msg = match result {
                     Ok(Some(msg)) => msg,
                     Ok(None) => {
