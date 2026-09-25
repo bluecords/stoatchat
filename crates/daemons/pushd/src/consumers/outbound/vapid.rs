@@ -11,8 +11,8 @@ use base64::{
 use lapin::{message::Delivery, Channel as AMQPChannel, Connection};
 use revolt_database::{events::rabbit::*, util::format_display_name, Database};
 use web_push::{
-    ContentEncoding, IsahcWebPushClient, SubscriptionInfo, SubscriptionKeys, VapidSignatureBuilder,
-    WebPushClient, WebPushError, WebPushMessageBuilder,
+    ContentEncoding, IsahcWebPushClient, SubscriptionInfo, SubscriptionKeys, Urgency,
+    VapidSignatureBuilder, WebPushClient, WebPushError, WebPushMessageBuilder,
 };
 
 /// Host portion of a push endpoint, for log context.
@@ -170,6 +170,13 @@ impl Consumer for VapidOutboundConsumer {
 
         let mut builder = WebPushMessageBuilder::new(&subscription);
         builder.set_vapid_signature(signature);
+
+        // Without an Urgency header the push service treats a message as
+        // "normal", and Android holds normal messages while the phone is idle
+        // (Doze) - measured 2026-09-24: Google accepted a mention for a
+        // member's Pixel and nothing showed on the phone. Every push we send
+        // is a person-directed notification the member expects now.
+        builder.set_urgency(Urgency::High);
 
         // aes128gcm (RFC 8291) is the standard content encoding and the only one
         // Microsoft's WNS accepts — the legacy `AesGcm` draft encoding makes WNS
