@@ -285,7 +285,11 @@ async fn keep_copy(
     // object when this exact image is already there.
     let file_hash = match db.fetch_attachment_hash(&hash).await {
         Ok(existing) if !existing.iv.is_empty() => existing,
-        existing => {
+        // Another upload of these exact bytes is still in flight. Uploading
+        // over it could leave the stored object and its nonce mismatched for
+        // every file sharing the hash, so keep the original URL instead.
+        Ok(_) => return Err(create_error!(InternalError)),
+        Err(_) => {
             let mut file_hash = FileHash {
                 id: hash.clone(),
                 processed_hash: hash.clone(),
@@ -303,9 +307,7 @@ async fn keep_copy(
                 size: (buf.len() + revolt_files::AUTHENTICATION_TAG_SIZE_BYTES) as isize,
             };
 
-            if existing.is_err() {
-                db.insert_attachment_hash(&file_hash).await?;
-            }
+            db.insert_attachment_hash(&file_hash).await?;
 
             let nonce = {
                 let (bucket, path, buf) = (
