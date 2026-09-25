@@ -239,19 +239,19 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
         }
         .fuse();
 
-        // Stops (ending the connection) as soon as a Ping cannot be written.
+        // Never finishes on its own: a failed send is ignored, and a dead
+        // socket is closed by the worker's read error or CLIENT_IDLE_TIMEOUT.
+        // Ending the select from here would drop the listener mid-await and
+        // leak its Redis subscriber (it never reaches `subscriber.quit()`).
         let heartbeat = async {
             loop {
                 async_std::task::sleep(SERVER_PING_INTERVAL).await;
-                if write
+                write
                     .lock()
                     .await
                     .send(async_tungstenite::tungstenite::Message::Ping(vec![]))
                     .await
-                    .is_err()
-                {
-                    break;
-                }
+                    .ok();
             }
         }
         .fuse();
