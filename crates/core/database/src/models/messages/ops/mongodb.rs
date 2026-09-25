@@ -294,11 +294,13 @@ impl AbstractMessages for MongoDb {
 
     /// Delete a message from the database by its id
     async fn delete_message(&self, id: &str) -> Result<()> {
+        self.mark_message_files_as_deleted(&[id.to_owned()]).await?;
         query!(self, delete_one_by_id, COL, id).map(|_| ())
     }
 
     /// Delete messages from a channel by their ids and corresponding channel id
     async fn delete_messages(&self, channel: &str, ids: &[String]) -> Result<()> {
+        self.mark_message_files_as_deleted(ids).await?;
         self.col::<Document>(COL)
             .delete_many(doc! {
                 "channel": channel,
@@ -390,6 +392,9 @@ impl AbstractMessages for MongoDb {
             }
         }
 
+        let all_message_ids: Vec<String> = deleted_messages.values().flatten().cloned().collect();
+        self.mark_message_files_as_deleted(&all_message_ids).await?;
+
         // Mark attachments as deleted before deleting messages
         if !attachment_ids.is_empty() {
             self.col::<Document>("attachments")
@@ -428,7 +433,52 @@ impl IntoDocumentPath for FieldsMessage {
 }
 
 impl MongoDb {
+    /// Mark every file owned by these messages as deleted, whether or not it
+    /// is listed in the message's `attachments` - in particular our stored
+    /// copies of link-preview images (tasks::process_embeds), which are only
+    /// referenced from the embed. crond removes deleted files from storage.
+    pub async fn mark_message_files_as_deleted(&self, message_ids: &[String]) -> Result<()> {
+        if message_ids.is_empty() {
+            return Ok(());
+        }
+
+        self.col::<Document>("attachments")
+            .update_many(
+                doc! {
+                    "used_for.type": "Message",
+                    "used_for.id": { "$in": message_ids }
+                },
+                doc! {
+                    "$set": {
+                        "deleted": true
+                    }
+                },
+            )
+            .await
+            .map(|_| ())
+            .map_err(|_| create_database_error!("update_many", "attachments"))
+    }
+
     pub async fn delete_bulk_messages(&self, projection: Document) -> Result<()> {
+        // Messages with link previews may own stored copies of their images.
+        let mut for_embeds = projection.clone();
+        for_embeds.insert("embeds", doc! { "$exists": 1_i32 });
+        let message_ids_with_embeds = self
+            .find_with_options::<_, DocumentId>(
+                COL,
+                for_embeds,
+                FindOptions::builder()
+                    .projection(doc! { "_id": 1_i32 })
+                    .build(),
+            )
+            .await
+            .map_err(|_| create_database_error!("find_many", COL))?
+            .into_iter()
+            .map(|x| x.id)
+            .collect::<Vec<String>>();
+        self.mark_message_files_as_deleted(&message_ids_with_embeds)
+            .await?;
+
         let mut for_attachments = projection.clone();
         for_attachments.insert(
             "attachments",
