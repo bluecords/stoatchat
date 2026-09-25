@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1](https://github.com/bluecords/stoatchat/compare/v0.29.0...v0.29.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **bonfire:** server heartbeat so quiet background tabs stop reconnecting ([#87](https://github.com/bluecords/stoatchat/issues/87)) ([3ec636a](https://github.com/bluecords/stoatchat/commit/3ec636a01097531c7ee07d4a372752f29b5e5ab9))
+
 ## [0.29.0](https://github.com/bluecords/stoatchat/compare/v0.28.1...v0.29.0) (2026-09-25)
 
 
