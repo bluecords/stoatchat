@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.0](https://github.com/bluecords/stoatchat/compare/v0.28.1...v0.29.0) (2026-09-25)
+
+
+### Features
+
+* **forum:** per-forum gallery_layout setting (list vs two-column gallery) ([#85](https://github.com/bluecords/stoatchat/issues/85)) ([7c27cf1](https://github.com/bluecords/stoatchat/commit/7c27cf168cf1a29fe225a4fabe1d513190b44dbb))
+
 ## [0.28.1](https://github.com/bluecords/stoatchat/compare/v0.28.0...v0.28.1) (2026-09-25)
 
 
