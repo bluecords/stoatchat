@@ -14,7 +14,7 @@ repository = "https://github.com/stoatchat/stoatchat"
 mongodb = ["dep:mongodb", "bson", "authifier/database-mongodb"]
 
 # ... Other
-tasks = ["isahc", "linkify", "url-escape"]
+tasks = ["isahc", "linkify", "url-escape", "revolt-files", "sha2", "tokio"]
 async-std-runtime = ["async-std", "authifier/async-std-runtime"]
 rocket-impl = [
     "rocket",
@@ -39,6 +39,7 @@ revolt-presence = { workspace = true }
 revolt-permissions = { workspace = true, features = ["serde", "bson"] }
 revolt-parser = { workspace = true }
 revolt-coalesced = { workspace = true }
+revolt-files = { workspace = true, optional = true }
 
 # Utility
 log = { workspace = true }
@@ -46,6 +47,8 @@ lru = { workspace = true }
 rand = { workspace = true }
 ulid = { workspace = true }
 nanoid = { workspace = true }
+sha2 = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["rt-multi-thread"], optional = true }
 base64 = { workspace = true }
 once_cell = { workspace = true }
 indexmap = { workspace = true }
