@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/bluecords/stoatchat/compare/v0.28.0...v0.28.1) (2026-09-25)
+
+
+### Bug Fixes
+
+* **pushd:** send web push with Urgency: high ([#83](https://github.com/bluecords/stoatchat/issues/83)) ([e48351b](https://github.com/bluecords/stoatchat/commit/e48351bf3e8ae735edfee2752d1d1d528c4073e9))
+
 ## [0.28.0](https://github.com/bluecords/stoatchat/compare/v0.27.0...v0.28.0) (2026-09-24)
 
 
