@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/bluecords/stoatchat/compare/v0.29.1...v0.30.0) (2026-09-25)
+
+
+### Features
+
+* **embeds:** keep our own copy of link-preview images ([#89](https://github.com/bluecords/stoatchat/issues/89)) ([041fb18](https://github.com/bluecords/stoatchat/commit/041fb1815fd915b78f81f94f11b587ab90c9138e))
+
 ## [0.29.1](https://github.com/bluecords/stoatchat/compare/v0.29.0...v0.29.1) (2026-09-25)
 
 
