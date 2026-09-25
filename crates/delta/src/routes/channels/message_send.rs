@@ -294,6 +294,7 @@ mod test {
                 voice: None,
                 allowed_tags: None,
                 solution_enabled: None,
+                gallery_layout: None,
             },
             true,
         )
@@ -331,6 +332,7 @@ mod test {
             slowmode: None,
             allowed_tags: None,
             solution_enabled: None,
+            gallery_layout: None,
         };
         locked_channel
             .update(&harness.db, partial, vec![])

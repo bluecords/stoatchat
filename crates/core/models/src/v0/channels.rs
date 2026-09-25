@@ -174,6 +174,12 @@ auto_derived!(
                 serde(skip_serializing_if = "crate::if_false", default)
             )]
             solution_enabled: bool,
+            /// Whether posts show as a two-column image gallery instead of a list
+            #[cfg_attr(
+                feature = "serde",
+                serde(skip_serializing_if = "crate::if_false", default)
+            )]
+            gallery_layout: bool,
         },
     }
 
@@ -218,6 +224,8 @@ auto_derived!(
         pub allowed_tags: Option<Vec<String>>,
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         pub solution_enabled: Option<bool>,
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+        pub gallery_layout: Option<bool>,
     }
 
     /// Optional fields on channel object
@@ -268,6 +276,9 @@ auto_derived!(
 
         /// Whether replies can be marked as the "solution" to a post (forum channels only)
         pub solution_enabled: Option<bool>,
+
+        /// Whether posts show as a two-column image gallery instead of a list (forum channels only)
+        pub gallery_layout: Option<bool>,
 
         /// Fields to remove from channel
         #[cfg_attr(feature = "serde", serde(default))]
@@ -338,6 +349,10 @@ auto_derived!(
         /// Whether replies can be marked as the "solution" to a post (forum channels only)
         #[serde(skip_serializing_if = "Option::is_none")]
         pub solution_enabled: Option<bool>,
+
+        /// Whether posts show as a two-column image gallery instead of a list (forum channels only)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub gallery_layout: Option<bool>,
     }
 
     /// New default permissions

@@ -44,6 +44,7 @@ pub async fn edit(
         && data.slowmode.is_none()
         && data.allowed_tags.is_none()
         && data.solution_enabled.is_none()
+        && data.gallery_layout.is_none()
         && data.remove.is_empty()
     {
         return Ok(Json(channel.into()));
@@ -265,6 +266,7 @@ pub async fn edit(
             nsfw,
             allowed_tags,
             solution_enabled,
+            gallery_layout,
             ..
         } => {
             if data.remove.contains(&v0::FieldsChannel::Icon) {
@@ -316,6 +318,11 @@ pub async fn edit(
             if let Some(new_solution_enabled) = data.solution_enabled {
                 *solution_enabled = new_solution_enabled;
                 partial.solution_enabled = Some(new_solution_enabled);
+            }
+
+            if let Some(new_gallery_layout) = data.gallery_layout {
+                *gallery_layout = new_gallery_layout;
+                partial.gallery_layout = Some(new_gallery_layout);
             }
         }
         _ => return Err(create_error!(InvalidOperation)),

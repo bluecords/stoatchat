@@ -222,6 +222,7 @@ impl From<crate::Channel> for Channel {
                 nsfw,
                 allowed_tags,
                 solution_enabled,
+                gallery_layout,
             } => Channel::ForumChannel {
                 id,
                 server,
@@ -234,6 +235,7 @@ impl From<crate::Channel> for Channel {
                 nsfw,
                 allowed_tags,
                 solution_enabled,
+                gallery_layout,
             },
         }
     }
@@ -313,6 +315,7 @@ impl From<Channel> for crate::Channel {
                 nsfw,
                 allowed_tags,
                 solution_enabled,
+                gallery_layout,
             } => crate::Channel::ForumChannel {
                 id,
                 server,
@@ -325,6 +328,7 @@ impl From<Channel> for crate::Channel {
                 nsfw,
                 allowed_tags,
                 solution_enabled,
+                gallery_layout,
             },
         }
     }
@@ -347,6 +351,7 @@ impl From<crate::PartialChannel> for PartialChannel {
             slowmode: value.slowmode,
             allowed_tags: value.allowed_tags,
             solution_enabled: value.solution_enabled,
+            gallery_layout: value.gallery_layout,
         }
     }
 }
@@ -368,6 +373,7 @@ impl From<PartialChannel> for crate::PartialChannel {
             slowmode: value.slowmode,
             allowed_tags: value.allowed_tags,
             solution_enabled: value.solution_enabled,
+            gallery_layout: value.gallery_layout,
         }
     }
 }
