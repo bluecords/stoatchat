@@ -205,6 +205,7 @@ mod test {
                 voice: None,
                 allowed_tags: None,
                 solution_enabled: None,
+                gallery_layout: None,
             },
             true,
         )

@@ -158,6 +158,10 @@ auto_derived!(
             /// Whether replies in this forum channel can be marked as the "solution" to a post
             #[serde(skip_serializing_if = "crate::if_false", default)]
             solution_enabled: bool,
+
+            /// Whether posts show as a two-column image gallery instead of a list
+            #[serde(skip_serializing_if = "crate::if_false", default)]
+            gallery_layout: bool,
         },
     }
 
@@ -200,6 +204,8 @@ auto_derived!(
         pub allowed_tags: Option<Vec<String>>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub solution_enabled: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub gallery_layout: Option<bool>,
     }
 
     /// Optional fields on channel object
@@ -288,6 +294,7 @@ impl Channel {
                 nsfw: data.nsfw.unwrap_or(false),
                 allowed_tags: data.allowed_tags,
                 solution_enabled: data.solution_enabled.unwrap_or(false),
+                gallery_layout: data.gallery_layout.unwrap_or(false),
             },
         };
 
@@ -735,6 +742,7 @@ impl Channel {
                 role_permissions,
                 allowed_tags,
                 solution_enabled,
+                gallery_layout,
                 ..
             } => {
                 if let Some(v) = partial.name {
@@ -767,6 +775,10 @@ impl Channel {
 
                 if let Some(v) = partial.solution_enabled {
                     *solution_enabled = v;
+                }
+
+                if let Some(v) = partial.gallery_layout {
+                    *gallery_layout = v;
                 }
             }
         }
