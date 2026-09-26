@@ -235,16 +235,24 @@ pub async fn populate_special(original_url: String, metadata: &mut WebsiteMetada
             metadata.icon_url.take();
             metadata.site_name.take();
 
-            // Verify the video exists
-            if !crate::requests::Request::exists_from_str(&format!(
-                "http://img.youtube.com/vi/{}/sddefault.jpg",
-                id
-            ))
-            .await
-            .unwrap_or(false)
+            // Verify the video exists. This static thumbnail CDN isn't
+            // subject to the datacentre-IP block above (that only affects
+            // scraping the watch page itself), so reuse the same URL as the
+            // preview image instead of leaving the embed without one.
+            let thumbnail_url = format!("http://img.youtube.com/vi/{}/sddefault.jpg", id);
+            if !crate::requests::Request::exists_from_str(&thumbnail_url)
+                .await
+                .unwrap_or(false)
             {
                 return;
             }
+
+            metadata.image = Some(Image {
+                url: thumbnail_url,
+                width: 640,
+                height: 480,
+                size: ImageSize::Large,
+            });
         }
 
         if let Some(timestamp_captures) = RE_TIMESTAMP.captures_iter(url).next() {
@@ -332,5 +340,44 @@ pub async fn populate_special(original_url: String, metadata: &mut WebsiteMetada
             Special::AppleMusic { .. } => metadata.colour = Some("#FA233B".to_string()),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Regression test for the black-thumbnail bug: on a datacentre IP,
+    /// YouTube's watch page never yields `og:video`, so this always takes
+    /// the fallback branch in production. That branch must leave a usable
+    /// preview image behind, or the client's consent-gate card has nothing
+    /// to show. Needs network access (a real HEAD request to
+    /// img.youtube.com), same as `populate_special` itself.
+    #[tokio::test]
+    async fn youtube_fallback_populates_a_thumbnail() {
+        let url = "https://www.youtube.com/watch?v=wzm2fyI7oS0";
+        let mut metadata = WebsiteMetadata {
+            url: Some(url.to_owned()),
+            original_url: Some(url.to_owned()),
+            special: None,
+            title: None,
+            description: None,
+            image: None,
+            video: None, // the exact condition YouTube's datacentre block produces
+            site_name: None,
+            icon_url: None,
+            colour: None,
+        };
+
+        populate_special(url.to_owned(), &mut metadata).await;
+
+        assert!(
+            matches!(metadata.special, Some(Special::YouTube { ref id, .. }) if id == "wzm2fyI7oS0")
+        );
+
+        let image = metadata.image.expect("fallback branch must set an image");
+        assert_eq!(image.url, "http://img.youtube.com/vi/wzm2fyI7oS0/sddefault.jpg");
+        assert_eq!(image.width, 640);
+        assert_eq!(image.height, 480);
     }
 }
