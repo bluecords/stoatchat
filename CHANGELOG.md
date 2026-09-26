@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/bluecords/stoatchat/compare/v0.30.0...v0.30.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **bonfire:** stop debug-build stack overflow on Windows on first connection ([#92](https://github.com/bluecords/stoatchat/issues/92)) ([ace9752](https://github.com/bluecords/stoatchat/commit/ace9752823e3e95bba1d7a287204e3152379c008))
+
 ## [0.30.0](https://github.com/bluecords/stoatchat/compare/v0.29.1...v0.30.0) (2026-09-25)
 
 
