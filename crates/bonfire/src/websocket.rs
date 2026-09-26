@@ -224,9 +224,16 @@ pub async fn client(db: &'static Database, stream: TcpStream, addr: SocketAddr) 
             kill_signal_1_s,
         );
 
-        let connection = async {
+        // Boxed, not just pin_mut!'d in place: `listener` and `worker` each
+        // run their own internal multi-branch select! in a loop, so this
+        // join! of both is a large generated state machine. Boxing moves it
+        // to the heap so the stack frame that polls it - main's, or
+        // whichever async-std/runtime worker thread picks up this task's
+        // poll - only ever holds a thin pointer, regardless of how much
+        // bigger `listener`/`worker` grow as this file changes.
+        let connection = Box::pin(async {
             join!(listener, worker);
-        }
+        })
         .fuse();
 
         // Refresh well inside CONNECTED_SESSION_TTL. Dropped (and so stopped)
