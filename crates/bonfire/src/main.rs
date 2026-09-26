@@ -12,8 +12,25 @@ pub mod events;
 mod database;
 mod websocket;
 
-#[async_std::main]
-async fn main() {
+fn main() {
+    // async-std's block_on() also helps drive the shared task pool from
+    // whichever thread calls it, so a freshly spawned connection's first
+    // poll can land on THIS thread instead of a pool worker (confirmed via
+    // a debug build: a prior crash here was reported on "main", not a
+    // "async-std/runtime" worker). websocket.rs's per-client future is now
+    // boxed for exactly this reason - see the comment on `connection` there
+    // - so this stack bump is defence in depth, not the only thing standing
+    // between a debug build and a stack overflow on Windows, whose default
+    // main-thread stack is far smaller than a Linux pthread's ~8 MiB.
+    std::thread::Builder::new()
+        .stack_size(16 * 1024 * 1024)
+        .spawn(|| async_std::task::block_on(run()))
+        .expect("failed to spawn main worker thread")
+        .join()
+        .unwrap_or_else(|e| std::panic::resume_unwind(e));
+}
+
+async fn run() {
     // Configure requirements for Bonfire.
     revolt_config::configure!(events);
     database::connect().await;
