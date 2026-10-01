@@ -190,6 +190,37 @@ impl AbstractMessages for ReferenceDb {
         try_join_all(ids.iter().map(|id| self.fetch_message(id))).await
     }
 
+    /// Fetch the messages in a channel that reply to any of the given message ids, oldest first
+    async fn fetch_replies_to(&self, channel: &str, parent_ids: &[String]) -> Result<Vec<Message>> {
+        let messages = self.messages.lock().await;
+        let mut found: Vec<Message> = messages
+            .values()
+            .filter(|message| {
+                message.channel == channel
+                    && message
+                        .replies
+                        .as_ref()
+                        .is_some_and(|r| r.iter().any(|id| parent_ids.contains(id)))
+            })
+            .cloned()
+            .collect();
+        found.sort_by(|a, b| a.id.cmp(&b.id));
+        Ok(found)
+    }
+
+    /// Point every file owned by one message at another message
+    async fn repoint_message_files(&self, old_id: &str, new_id: &str) -> Result<()> {
+        let mut files = self.files.lock().await;
+        for file in files.values_mut() {
+            if let Some(used_for) = file.used_for.as_mut() {
+                if used_for.id == old_id {
+                    used_for.id = new_id.to_string();
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Update a given message with new information
     async fn update_message(&self, id: &str, message: &PartialMessage, remove: Vec<FieldsMessage>) -> Result<()> {
         let mut messages = self.messages.lock().await;
@@ -287,6 +318,14 @@ impl AbstractMessages for ReferenceDb {
             .retain(|id, message| message.channel != channel && !ids.contains(id));
 
         Ok(())
+    }
+
+    /// Delete messages from a channel by id WITHOUT marking their files as deleted
+    async fn delete_messages_keeping_files(&self, channel: &str, ids: &[String]) -> Result<usize> {
+        let mut messages = self.messages.lock().await;
+        let before = messages.len();
+        messages.retain(|id, message| !(message.channel == channel && ids.contains(id)));
+        Ok(before - messages.len())
     }
 
     /// Delete all messages from a specific author in a list of channels from a certain ULID onwards

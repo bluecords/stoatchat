@@ -11,7 +11,7 @@
   the release branch. **Re-run before investigating.**
 - **The release chain is Claude's**, per `claude-repo/FEEDBACK.md` → AUTONOMY. Merge the feature
   PR, then merge the `chore(main): release X.Y.Z` PR release-please opens; images build
-  automatically. **Bunjie's gate is the PROD deploy only** — bumping `nac-server/compose.yml`.
+  automatically. **Claude does the bump of `nac-server/compose.yml` and the whole chain; no per-deploy approval** (`[RULED BY BUNJIE]` 2026-10-01: *"If I asked you to fix it, I expect you to run through the process and test and deploy unless you need some specific guidance from me."*). Verify the live API reports the new version, then tell him what to validate.
 - **Clients compute permissions THEMSELVES.** `revolt-permissions` is server-side; web has its
   own `calculator.ts` and Android its own `Permissions.kt`, and neither knows about consent
   state. **Anything enforced only inside `calculate_server_permissions` is invisible in every

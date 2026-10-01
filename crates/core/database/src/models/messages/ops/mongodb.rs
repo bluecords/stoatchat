@@ -292,6 +292,41 @@ impl AbstractMessages for MongoDb {
             .map_err(|_| create_database_error!("update_one", COL))
     }
 
+    /// Fetch the messages in a channel that reply to any of the given message ids, oldest first
+    async fn fetch_replies_to(&self, channel: &str, parent_ids: &[String]) -> Result<Vec<Message>> {
+        self.find_with_options(
+            COL,
+            doc! {
+                "channel": channel,
+                "replies": { "$in": parent_ids }
+            },
+            FindOptions::builder().sort(doc! { "_id": 1_i32 }).build(),
+        )
+        .await
+        .map_err(|_| create_database_error!("find", COL))
+    }
+
+    /// Point every file owned by one message at another message
+    async fn repoint_message_files(&self, old_id: &str, new_id: &str) -> Result<()> {
+        self.col::<Document>("attachments")
+            .update_many(
+                doc! { "used_for.type": "Message", "used_for.id": old_id },
+                doc! { "$set": { "used_for.id": new_id } },
+            )
+            .await
+            .map_err(|_| create_database_error!("update_many", "attachments"))?;
+
+        // Older files carry the owner as a bare `message_id`.
+        self.col::<Document>("attachments")
+            .update_many(
+                doc! { "message_id": old_id },
+                doc! { "$set": { "message_id": new_id } },
+            )
+            .await
+            .map(|_| ())
+            .map_err(|_| create_database_error!("update_many", "attachments"))
+    }
+
     /// Delete a message from the database by its id
     async fn delete_message(&self, id: &str) -> Result<()> {
         self.mark_message_files_as_deleted(&[id.to_owned()]).await?;
@@ -310,6 +345,18 @@ impl AbstractMessages for MongoDb {
             })
             .await
             .map(|_| ())
+            .map_err(|_| create_database_error!("delete_many", COL))
+    }
+
+    /// Delete messages from a channel by id WITHOUT marking their files as deleted
+    async fn delete_messages_keeping_files(&self, channel: &str, ids: &[String]) -> Result<usize> {
+        self.col::<Document>(COL)
+            .delete_many(doc! {
+                "channel": channel,
+                "_id": { "$in": ids }
+            })
+            .await
+            .map(|result| result.deleted_count as usize)
             .map_err(|_| create_database_error!("delete_many", COL))
     }
 

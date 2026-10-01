@@ -389,6 +389,13 @@ auto_derived!(
         pub forum_tags: Option<Vec<String>>,
     }
 
+    /// Where to move a message
+    pub struct DataMoveMessage {
+        /// Id of the channel to move the message to. Must be a text or forum
+        /// channel on the same server.
+        pub channel: String,
+    }
+
     /// Options for bulk deleting messages
     #[cfg_attr(
         feature = "validator",
