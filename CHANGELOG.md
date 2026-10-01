@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/bluecords/stoatchat/compare/v0.30.1...v0.31.0) (2026-10-01)
+
+
+### Features
+
+* move a message, or a whole forum post with its replies, to another channel ([#94](https://github.com/bluecords/stoatchat/issues/94)) ([4633ede](https://github.com/bluecords/stoatchat/commit/4633ede17d3557dc9f9be5eb39f8c1f4ef27f39e))
+
 ## [0.30.1](https://github.com/bluecords/stoatchat/compare/v0.30.0...v0.30.1) (2026-09-26)
 
 
