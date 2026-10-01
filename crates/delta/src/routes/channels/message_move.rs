@@ -361,7 +361,7 @@ mod test {
         assert_eq!(moved_root.content.as_deref(), Some("**My Title**\n\nbody"));
 
         // All three messages are now in the text channel, replies pointing at new ids.
-        let moved = harness
+        let mut moved = harness
             .db
             .fetch_messages(revolt_database::MessageQuery {
                 limit: None,
@@ -377,6 +377,8 @@ mod test {
             })
             .await
             .unwrap();
+        // Order by id (ulids are time-ordered): the databases differ in how they sort a fetch.
+        moved.sort_by(|a, b| a.id.cmp(&b.id));
         assert_eq!(moved.len(), 3);
         assert_eq!(moved[0].id, moved_root.id);
         assert_eq!(moved[1].content.as_deref(), Some("reply a"));
@@ -474,8 +476,9 @@ mod test {
 
     #[rocket::async_test]
     async fn move_requires_send_message_in_the_target() {
-        use revolt_database::PartialMember;
+        use revolt_database::{PartialChannel, PartialMember};
         use revolt_permissions::{ChannelPermission, OverrideField};
+        use std::collections::HashMap;
 
         let harness = TestHarness::new().await;
         let (_, _, owner) = harness.new_user().await;
@@ -516,15 +519,23 @@ mod test {
             .await
             .unwrap();
 
-        // ...but cannot post in one channel (an announcements-style channel).
+        // ...but cannot post in one channel (an announcements-style channel). Set through a
+        // channel update, the way the other permission tests do, so it behaves the same on the
+        // in-memory test database as on MongoDB.
         read_only
-            .set_role_permission(
+            .update(
                 &harness.db,
-                &role.id,
-                OverrideField {
-                    a: 0,
-                    d: ChannelPermission::SendMessage as i64,
+                PartialChannel {
+                    role_permissions: Some(HashMap::from([(
+                        role.id.clone(),
+                        OverrideField {
+                            a: 0,
+                            d: ChannelPermission::SendMessage as i64,
+                        },
+                    )])),
+                    ..Default::default()
                 },
+                vec![],
             )
             .await
             .unwrap();
