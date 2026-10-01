@@ -1109,6 +1109,276 @@ impl Message {
         Ok(())
     }
 
+    /// Move this message to another channel on the same server.
+    ///
+    /// A forum post (a root message with a `forum_title`) takes its whole reply thread with
+    /// it; any other message moves alone. Author, content, attachments, reactions, pins,
+    /// embeds and the reply structure all travel. Every moved message gets a fresh id, so it
+    /// lands at the bottom of the target where people will see it, rather than buried at its
+    /// original position; when the target already has newer messages the post is prefixed
+    /// with the time it was originally posted. Nobody is re-notified.
+    ///
+    /// The new messages are inserted and their files re-pointed BEFORE the originals are
+    /// deleted, so a failure part-way never loses the post (the inserts are rolled back).
+    pub async fn move_to_channel(
+        self,
+        db: &Database,
+        source: &Channel,
+        target: &Channel,
+    ) -> Result<Vec<Message>> {
+        use std::collections::{HashMap, HashSet};
+
+        // Cap on a post's size: a runaway thread should fail loudly, not stall the API.
+        const MAX_MOVED_MESSAGES: usize = 1000;
+
+        if self.system.is_some() {
+            return Err(create_error!(InvalidOperation));
+        }
+
+        let source_id = source.id().to_string();
+        let target_id = target.id().to_string();
+        if source_id == target_id || self.channel != source_id {
+            return Err(create_error!(InvalidOperation));
+        }
+
+        // 1. Gather the post: the root, plus (for a forum post) every message that replies
+        //    to it, directly or through another reply.
+        let is_forum_post = self.forum_title.is_some();
+        let mut thread = vec![self.clone()];
+        if is_forum_post {
+            let mut seen: HashSet<String> = HashSet::from([self.id.clone()]);
+            let mut frontier = vec![self.id.clone()];
+            while !frontier.is_empty() {
+                let found = db.fetch_replies_to(&source_id, &frontier).await?;
+                frontier = vec![];
+                for message in found {
+                    if seen.insert(message.id.clone()) {
+                        frontier.push(message.id.clone());
+                        thread.push(message);
+                    }
+                    if thread.len() > MAX_MOVED_MESSAGES {
+                        return Err(create_error!(FailedValidation {
+                            error: format!(
+                                "a post can have at most {MAX_MOVED_MESSAGES} messages to move"
+                            )
+                        }));
+                    }
+                }
+            }
+            thread.sort_by(|a, b| a.id.cmp(&b.id));
+        }
+
+        // 2. Fresh, strictly increasing ids: the post keeps its internal order.
+        let mut generator = ulid::Generator::new();
+        let mut id_map: HashMap<String, String> = HashMap::new();
+        for message in &thread {
+            let new_id = generator
+                .generate()
+                .map_err(|_| create_error!(InternalError))?
+                .to_string();
+            id_map.insert(message.id.clone(), new_id);
+        }
+
+        // 3. Does the target already have messages newer than the original post?
+        let target_has_newer = !db
+            .fetch_messages(MessageQuery {
+                limit: Some(1),
+                filter: MessageFilter {
+                    channel: Some(target_id.clone()),
+                    ..Default::default()
+                },
+                time_period: MessageTimePeriod::Absolute {
+                    before: None,
+                    after: Some(self.id.clone()),
+                    sort: None,
+                },
+            })
+            .await?
+            .is_empty();
+        let original_seconds = Ulid::from_string(&self.id)
+            .map(|id| id.timestamp_ms() / 1000)
+            .ok();
+
+        let (allowed_tags, solution_enabled, target_is_forum) = match target {
+            Channel::ForumChannel {
+                allowed_tags,
+                solution_enabled,
+                ..
+            } => (allowed_tags.clone(), *solution_enabled, true),
+            _ => (None, false, false),
+        };
+
+        // 4. Build the moved copies.
+        let mut moved: Vec<Message> = Vec::with_capacity(thread.len());
+        for original in &thread {
+            let is_root = original.id == self.id;
+            let mut message = original.clone();
+            message.id = id_map[&original.id].clone();
+            message.channel = target_id.clone();
+            message.nonce = None;
+            message.replies = original
+                .replies
+                .as_ref()
+                .map(|replies| {
+                    replies
+                        .iter()
+                        .filter_map(|id| id_map.get(id).cloned())
+                        .collect::<Vec<String>>()
+                })
+                .filter(|replies| !replies.is_empty());
+
+            if !solution_enabled {
+                message.forum_solution = None;
+            }
+
+            if is_root {
+                // A root is never the accepted answer to anything.
+                message.forum_solution = None;
+                let mut content = original.content.clone().unwrap_or_default();
+
+                if target_is_forum {
+                    if original.forum_title.is_none() {
+                        // A plain message becoming a post needs a title.
+                        let first_line = content.lines().next().unwrap_or_default();
+                        let cleaned = Message::strip_mentions(first_line);
+                        let title: String = cleaned.chars().take(100).collect();
+                        message.forum_title = Some(if title.trim().is_empty() {
+                            "Moved message".to_string()
+                        } else {
+                            title
+                        });
+                        message.forum_tags = None;
+                    } else if let (Some(tags), Some(allowed)) =
+                        (message.forum_tags.as_mut(), allowed_tags.as_ref())
+                    {
+                        tags.retain(|tag| allowed.contains(tag));
+                        if tags.is_empty() {
+                            message.forum_tags = None;
+                        }
+                    }
+                } else if let Some(title) = original.forum_title.as_ref() {
+                    // Text channels do not render a forum title, so keep it in the body.
+                    content = format!("**{title}**\n\n{content}");
+                    message.forum_title = None;
+                    message.forum_tags = None;
+                    message.forum_solution = None;
+                }
+
+                if target_has_newer {
+                    if let Some(seconds) = original_seconds {
+                        content = format!("*Originally posted <t:{seconds}:F>*\n\n{content}");
+                    }
+                }
+
+                message.content = if content.trim().is_empty() {
+                    None
+                } else {
+                    Some(content)
+                };
+            }
+
+            moved.push(message);
+        }
+
+        // 5. Insert the copies; undo them all if any insert fails.
+        for (index, message) in moved.iter().enumerate() {
+            if let Err(error) = db.insert_message(message).await {
+                Message::abort_move(db, &thread, &moved[..index], 0, &target_id).await;
+                return Err(error);
+            }
+        }
+
+        // 6. Hand the files to the new messages, so removing the originals cannot touch them.
+        for (index, original) in thread.iter().enumerate() {
+            if let Err(error) = db
+                .repoint_message_files(&original.id, &moved[index].id)
+                .await
+            {
+                // The failing re-point may have half-applied, so it is reverted too.
+                Message::abort_move(db, &thread, &moved, index + 1, &target_id).await;
+                return Err(error);
+            }
+        }
+
+        // 7. Remove the originals. This is also the claim on them: if nothing was removed,
+        //    a concurrent move or delete got there first, so back out rather than duplicate.
+        let original_ids: Vec<String> = thread.iter().map(|m| m.id.clone()).collect();
+        match db
+            .delete_messages_keeping_files(&source_id, &original_ids)
+            .await
+        {
+            Ok(removed) if removed > 0 => {}
+            Ok(_) => {
+                Message::abort_move(db, &thread, &moved, thread.len(), &target_id).await;
+                return Err(create_error!(NotFound));
+            }
+            Err(error) => {
+                Message::abort_move(db, &thread, &moved, thread.len(), &target_id).await;
+                return Err(error);
+            }
+        }
+
+        // 8. Tell clients: the post appears in the target, and leaves the source.
+        for message in &moved {
+            EventV1::Message(message.clone().into_model(None, None))
+                .p(target_id.clone())
+                .await;
+        }
+        EventV1::BulkMessageDelete {
+            channel: source_id.clone(),
+            ids: original_ids,
+        }
+        .p(source_id)
+        .await;
+
+        #[cfg(feature = "tasks")]
+        if let Some(last) = moved.last() {
+            tasks::last_message_id::queue(target_id, last.id.clone(), false).await;
+        }
+
+        Ok(moved)
+    }
+
+    /// Undo a move that failed part-way: hand the first `repointed` messages' files back to
+    /// the originals, then drop the copies. Uses the file-keeping delete, so no file is ever
+    /// marked deleted by a failure. Best effort: each step is attempted even if one fails.
+    async fn abort_move(
+        db: &Database,
+        originals: &[Message],
+        copies: &[Message],
+        repointed: usize,
+        target_id: &str,
+    ) {
+        for index in (0..repointed.min(copies.len())).rev() {
+            let _ = db
+                .repoint_message_files(&copies[index].id, &originals[index].id)
+                .await;
+        }
+        let copy_ids: Vec<String> = copies.iter().map(|m| m.id.clone()).collect();
+        let _ = db.delete_messages_keeping_files(target_id, &copy_ids).await;
+    }
+
+    /// Remove user and channel mention tags (`<@id>`, `<#id>`) from text, for use in a
+    /// title, which has no renderer to resolve them.
+    fn strip_mentions(text: &str) -> String {
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text;
+        while let Some(start) = rest.find('<') {
+            out.push_str(&rest[..start]);
+            let tail = &rest[start..];
+            let is_tag = tail.starts_with("<@") || tail.starts_with("<#");
+            match (is_tag, tail.find('>')) {
+                (true, Some(end)) => rest = &tail[end + 1..],
+                _ => {
+                    out.push('<');
+                    rest = &tail[1..];
+                }
+            }
+        }
+        out.push_str(rest);
+        out.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
     /// Bulk delete messages by an author since a given time
     pub async fn bulk_delete_by_author_since(
         db: &Database,

@@ -22,6 +22,14 @@ pub trait AbstractMessages: Sync + Send {
     /// Fetch multiple messages by given IDs
     async fn fetch_messages_by_id(&self, ids: &[String]) -> Result<Vec<Message>>;
 
+    /// Fetch the messages in a channel that reply to any of the given message ids, oldest first
+    async fn fetch_replies_to(&self, channel: &str, parent_ids: &[String]) -> Result<Vec<Message>>;
+
+    /// Point every file owned by one message at another message (used when a message moves
+    /// channel and so gets a new id). Without this the old message's deletion would mark
+    /// the files deleted.
+    async fn repoint_message_files(&self, old_id: &str, new_id: &str) -> Result<()>;
+
     /// Update a given message with new information
     async fn update_message(&self, id: &str, message: &PartialMessage, remove: Vec<FieldsMessage>) -> Result<()>;
 
@@ -42,6 +50,11 @@ pub trait AbstractMessages: Sync + Send {
 
     /// Delete messages from a channel by their ids and corresponding channel id
     async fn delete_messages(&self, channel: &str, ids: &[String]) -> Result<()>;
+
+    /// Delete messages from a channel by id WITHOUT marking their files as deleted,
+    /// returning how many were removed. Only for moving messages, once their files
+    /// have been handed to the new copies (a normal delete would orphan them).
+    async fn delete_messages_keeping_files(&self, channel: &str, ids: &[String]) -> Result<usize>;
 
     /// Delete all messages from a specific author in a server from a certain ULID onwards
     async fn delete_messages_by_author_since(
