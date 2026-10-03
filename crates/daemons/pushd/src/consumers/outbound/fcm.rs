@@ -319,6 +319,12 @@ impl Consumer for FcmOutboundConsumer {
             }
             res => {
                 res?;
+
+                log::info!(
+                    "FCM push accepted for user {} session {}",
+                    payload.user_id,
+                    payload.session_id
+                );
             }
         };
 

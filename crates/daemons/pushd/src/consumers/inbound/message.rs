@@ -56,6 +56,11 @@ impl Consumer for MessageConsumer {
             for session in sessions {
                 // This device is open right now and gets the message live.
                 if revolt_presence::is_session_connected(&session.id).await {
+                    log::info!(
+                        "Push skipped for user {} session {}: device is connected right now",
+                        session.user_id,
+                        session.id
+                    );
                     continue;
                 }
 
@@ -82,6 +87,13 @@ impl Consumer for MessageConsumer {
                             &config.pushd.vapid.queue
                         }
                     };
+
+                    log::info!(
+                        "Push queued for user {} session {} via {}",
+                        sendable.user_id,
+                        sendable.session_id,
+                        routing_key
+                    );
 
                     let payload = serde_json::to_string(&sendable)?;
                     self.publish_message(payload.as_bytes(), &config.pushd.exchange, routing_key)

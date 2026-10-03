@@ -29,6 +29,73 @@ fn endpoint_host(endpoint: &str) -> &str {
         .unwrap_or("unknown")
 }
 
+/// Largest payload we hand to the web push library. It rejects any plaintext
+/// payload over 3052 bytes (`PayloadTooLarge`, reported as "Maximum allowed
+/// payload size is 3070 characters"), and a long message used to fail there so
+/// the member silently got no notification (seen 2026-09-30).
+const MAX_PUSH_PAYLOAD_BYTES: usize = 3000;
+
+/// Length of the notification text kept when a payload is still too big after
+/// everything the service worker does not read has been dropped.
+const SHRUNK_BODY_CHARS: usize = 300;
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+
+    let mut out: String = text.chars().take(max_chars).collect();
+    out.push('…');
+    out
+}
+
+/// Serialise a message notification so it always fits in a push.
+///
+/// A payload that already fits is sent untouched. Otherwise it is rebuilt from
+/// only what the web service worker reads (title, author, icon, tag, url, body,
+/// and the channel's type and name), so the result no longer depends on how big
+/// the embedded message or channel are (mention lists, member roles, channel
+/// permissions...). The body is only shortened if that is still not enough.
+fn fit_payload(value: serde_json::Value) -> Result<String> {
+    let json = serde_json::to_string(&value)?;
+    if json.len() <= MAX_PUSH_PAYLOAD_BYTES {
+        return Ok(json);
+    }
+
+    let pick = |key: &str| value.get(key).cloned().unwrap_or(serde_json::Value::Null);
+    let channel = value.get("channel");
+    let channel_field = |key: &str| {
+        channel
+            .and_then(|c| c.get(key))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null)
+    };
+
+    let mut minimal = serde_json::json!({
+        "title": pick("title"),
+        "author": pick("author"),
+        "icon": pick("icon"),
+        "tag": pick("tag"),
+        "url": pick("url"),
+        "body": pick("body"),
+        "channel": {
+            "channel_type": channel_field("channel_type"),
+            "name": channel_field("name"),
+        },
+    });
+
+    let json = serde_json::to_string(&minimal)?;
+    if json.len() <= MAX_PUSH_PAYLOAD_BYTES {
+        return Ok(json);
+    }
+
+    if let Some(body) = minimal.get("body").and_then(|b| b.as_str()).map(str::to_string) {
+        minimal["body"] = serde_json::Value::String(truncate_chars(&body, SHRUNK_BODY_CHARS));
+    }
+
+    Ok(serde_json::to_string(&minimal)?)
+}
+
 #[derive(Clone)]
 #[allow(unused)]
 pub struct VapidOutboundConsumer {
@@ -129,7 +196,7 @@ impl Consumer for VapidOutboundConsumer {
                 serde_json::to_string(&body)?
             }
             PayloadKind::Generic(alert) => serde_json::to_string(&alert)?,
-            PayloadKind::MessageNotification(alert) => serde_json::to_string(&alert)?,
+            PayloadKind::MessageNotification(alert) => fit_payload(serde_json::to_value(&alert)?)?,
             PayloadKind::DmCallStartEnd(alert) => {
                 let initiator_name = if let Some(server_id) =
                     self.db.fetch_channel(&alert.channel_id).await?.server()
@@ -184,7 +251,14 @@ impl Consumer for VapidOutboundConsumer {
         // old encoding, which is why this only ever showed up on Windows clients.
         builder.set_payload(ContentEncoding::Aes128Gcm, payload_body.as_bytes());
 
-        let msg = builder.build()?;
+        let msg = builder.build().map_err(|err| {
+            anyhow!(
+                "web push message could not be built for user {} session {}: {}",
+                payload.user_id,
+                payload.session_id,
+                err
+            )
+        })?;
 
         match self.client.send(msg).await {
             // The subscription is genuinely dead: the credentials are rejected, or
@@ -223,9 +297,75 @@ impl Consumer for VapidOutboundConsumer {
             }
             res => {
                 res?;
+
+                // Success used to leave no trace, so "never sent" and "sent and
+                // lost on the device" looked the same in the logs.
+                log::info!(
+                    "Web push accepted by {} for user {} session {}",
+                    endpoint_host(&subscription.endpoint),
+                    payload.user_id,
+                    payload.session_id
+                );
             }
         };
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn notification(body: &str, content: &str) -> serde_json::Value {
+        json!({
+            "author": "A", "icon": "i", "body": body, "raw_body": body,
+            "tag": "t", "timestamp": 1, "url": "u",
+            "message": { "_id": "m", "content": content, "attachments": [], "embeds": [] },
+            "channel": { "channel_type": "TextChannel", "name": "general" }
+        })
+    }
+
+    #[test]
+    fn small_payload_is_untouched() {
+        let value = notification("hi", "hi");
+        let out: serde_json::Value = serde_json::from_str(&fit_payload(value.clone()).unwrap()).unwrap();
+        assert_eq!(out, value);
+    }
+
+    #[test]
+    fn long_message_is_shrunk_below_the_limit_and_keeps_what_the_service_worker_reads() {
+        let long = "x".repeat(5000);
+        let json = fit_payload(notification(&long, &long)).unwrap();
+        assert!(json.len() <= MAX_PUSH_PAYLOAD_BYTES, "was {}", json.len());
+
+        let out: serde_json::Value = serde_json::from_str(&json).unwrap();
+        for field in ["author", "icon", "tag", "url"] {
+            assert!(out.get(field).is_some(), "{field} missing");
+        }
+        assert_eq!(out["channel"]["name"], "general");
+        assert!(!out["body"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn small_body_but_huge_message_and_channel_still_fits() {
+        let mut value = notification("hi", "hi");
+        let ids: Vec<String> = (0..200).map(|i| format!("01KV3XZ0A4VB2ZTAXE0N{i:05}")).collect();
+        value["message"]["mentions"] = json!(ids);
+        value["channel"]["description"] = json!("d".repeat(2000));
+        let json = fit_payload(value).unwrap();
+        assert!(json.len() <= MAX_PUSH_PAYLOAD_BYTES, "was {}", json.len());
+
+        let out: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(out["body"], "hi");
+        assert_eq!(out["channel"]["name"], "general");
+    }
+
+    #[test]
+    fn truncation_never_splits_a_character() {
+        let out = truncate_chars(&"é".repeat(400), 300);
+        assert_eq!(out.chars().count(), 301);
+        assert!(out.ends_with('…'));
     }
 }
