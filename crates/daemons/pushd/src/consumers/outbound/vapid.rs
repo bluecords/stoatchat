@@ -29,6 +29,60 @@ fn endpoint_host(endpoint: &str) -> &str {
         .unwrap_or("unknown")
 }
 
+/// Largest payload we hand to the web push library, which refuses anything
+/// over 3070 bytes ("Maximum allowed payload size is 3070 characters"). A long
+/// message used to fail there and the member silently got no notification
+/// (seen 2026-09-30). Headroom is left for the encryption envelope.
+const MAX_PUSH_PAYLOAD_BYTES: usize = 3000;
+
+/// Length of the notification text kept when a payload is still too big after
+/// the unused fields are dropped.
+const SHRUNK_BODY_CHARS: usize = 300;
+
+fn truncate_chars(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+
+    let mut out: String = text.chars().take(max_chars).collect();
+    out.push('…');
+    out
+}
+
+/// Serialise a message notification so it always fits in a push.
+///
+/// The service worker only reads author, icon, tag, url, body and the channel's
+/// type and name. `raw_body` and the embedded message duplicate the text and are
+/// the bulk of an oversized payload, so they go first; the body itself is only
+/// shortened if that is still not enough.
+fn fit_payload(mut value: serde_json::Value) -> Result<String> {
+    let mut json = serde_json::to_string(&value)?;
+    if json.len() <= MAX_PUSH_PAYLOAD_BYTES {
+        return Ok(json);
+    }
+
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("raw_body");
+
+        if let Some(message) = obj.get_mut("message").and_then(|m| m.as_object_mut()) {
+            for field in ["content", "embeds", "attachments", "system", "reactions"] {
+                message.remove(field);
+            }
+        }
+    }
+
+    json = serde_json::to_string(&value)?;
+    if json.len() <= MAX_PUSH_PAYLOAD_BYTES {
+        return Ok(json);
+    }
+
+    if let Some(body) = value.get("body").and_then(|b| b.as_str()).map(str::to_string) {
+        value["body"] = serde_json::Value::String(truncate_chars(&body, SHRUNK_BODY_CHARS));
+    }
+
+    Ok(serde_json::to_string(&value)?)
+}
+
 #[derive(Clone)]
 #[allow(unused)]
 pub struct VapidOutboundConsumer {
@@ -129,7 +183,7 @@ impl Consumer for VapidOutboundConsumer {
                 serde_json::to_string(&body)?
             }
             PayloadKind::Generic(alert) => serde_json::to_string(&alert)?,
-            PayloadKind::MessageNotification(alert) => serde_json::to_string(&alert)?,
+            PayloadKind::MessageNotification(alert) => fit_payload(serde_json::to_value(&alert)?)?,
             PayloadKind::DmCallStartEnd(alert) => {
                 let initiator_name = if let Some(server_id) =
                     self.db.fetch_channel(&alert.channel_id).await?.server()
@@ -243,5 +297,48 @@ impl Consumer for VapidOutboundConsumer {
         };
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn notification(body: &str, content: &str) -> serde_json::Value {
+        json!({
+            "author": "A", "icon": "i", "body": body, "raw_body": body,
+            "tag": "t", "timestamp": 1, "url": "u",
+            "message": { "_id": "m", "content": content, "attachments": [], "embeds": [] },
+            "channel": { "channel_type": "TextChannel", "name": "general" }
+        })
+    }
+
+    #[test]
+    fn small_payload_is_untouched() {
+        let value = notification("hi", "hi");
+        let out: serde_json::Value = serde_json::from_str(&fit_payload(value.clone()).unwrap()).unwrap();
+        assert_eq!(out, value);
+    }
+
+    #[test]
+    fn long_message_is_shrunk_below_the_limit_and_keeps_what_the_service_worker_reads() {
+        let long = "x".repeat(5000);
+        let json = fit_payload(notification(&long, &long)).unwrap();
+        assert!(json.len() <= MAX_PUSH_PAYLOAD_BYTES, "was {}", json.len());
+
+        let out: serde_json::Value = serde_json::from_str(&json).unwrap();
+        for field in ["author", "icon", "tag", "url"] {
+            assert!(out.get(field).is_some(), "{field} missing");
+        }
+        assert_eq!(out["channel"]["name"], "general");
+        assert!(!out["body"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn truncation_never_splits_a_character() {
+        let out = truncate_chars(&"é".repeat(400), 300);
+        assert_eq!(out.chars().count(), 301);
+        assert!(out.ends_with('…'));
     }
 }
