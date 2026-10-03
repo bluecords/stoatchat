@@ -184,7 +184,14 @@ impl Consumer for VapidOutboundConsumer {
         // old encoding, which is why this only ever showed up on Windows clients.
         builder.set_payload(ContentEncoding::Aes128Gcm, payload_body.as_bytes());
 
-        let msg = builder.build()?;
+        let msg = builder.build().map_err(|err| {
+            anyhow!(
+                "web push message could not be built for user {} session {}: {}",
+                payload.user_id,
+                payload.session_id,
+                err
+            )
+        })?;
 
         match self.client.send(msg).await {
             // The subscription is genuinely dead: the credentials are rejected, or
@@ -223,6 +230,15 @@ impl Consumer for VapidOutboundConsumer {
             }
             res => {
                 res?;
+
+                // Success used to leave no trace, so "never sent" and "sent and
+                // lost on the device" looked the same in the logs.
+                log::info!(
+                    "Web push accepted by {} for user {} session {}",
+                    endpoint_host(&subscription.endpoint),
+                    payload.user_id,
+                    payload.session_id
+                );
             }
         };
 
