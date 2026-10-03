@@ -29,14 +29,14 @@ fn endpoint_host(endpoint: &str) -> &str {
         .unwrap_or("unknown")
 }
 
-/// Largest payload we hand to the web push library, which refuses anything
-/// over 3070 bytes ("Maximum allowed payload size is 3070 characters"). A long
-/// message used to fail there and the member silently got no notification
-/// (seen 2026-09-30). Headroom is left for the encryption envelope.
+/// Largest payload we hand to the web push library. It rejects any plaintext
+/// payload over 3052 bytes (`PayloadTooLarge`, reported as "Maximum allowed
+/// payload size is 3070 characters"), and a long message used to fail there so
+/// the member silently got no notification (seen 2026-09-30).
 const MAX_PUSH_PAYLOAD_BYTES: usize = 3000;
 
 /// Length of the notification text kept when a payload is still too big after
-/// the unused fields are dropped.
+/// everything the service worker does not read has been dropped.
 const SHRUNK_BODY_CHARS: usize = 300;
 
 fn truncate_chars(text: &str, max_chars: usize) -> String {
@@ -51,36 +51,49 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
 
 /// Serialise a message notification so it always fits in a push.
 ///
-/// The service worker only reads author, icon, tag, url, body and the channel's
-/// type and name. `raw_body` and the embedded message duplicate the text and are
-/// the bulk of an oversized payload, so they go first; the body itself is only
-/// shortened if that is still not enough.
-fn fit_payload(mut value: serde_json::Value) -> Result<String> {
-    let mut json = serde_json::to_string(&value)?;
+/// A payload that already fits is sent untouched. Otherwise it is rebuilt from
+/// only what the web service worker reads (title, author, icon, tag, url, body,
+/// and the channel's type and name), so the result no longer depends on how big
+/// the embedded message or channel are (mention lists, member roles, channel
+/// permissions...). The body is only shortened if that is still not enough.
+fn fit_payload(value: serde_json::Value) -> Result<String> {
+    let json = serde_json::to_string(&value)?;
     if json.len() <= MAX_PUSH_PAYLOAD_BYTES {
         return Ok(json);
     }
 
-    if let Some(obj) = value.as_object_mut() {
-        obj.remove("raw_body");
+    let pick = |key: &str| value.get(key).cloned().unwrap_or(serde_json::Value::Null);
+    let channel = value.get("channel");
+    let channel_field = |key: &str| {
+        channel
+            .and_then(|c| c.get(key))
+            .cloned()
+            .unwrap_or(serde_json::Value::Null)
+    };
 
-        if let Some(message) = obj.get_mut("message").and_then(|m| m.as_object_mut()) {
-            for field in ["content", "embeds", "attachments", "system", "reactions"] {
-                message.remove(field);
-            }
-        }
-    }
+    let mut minimal = serde_json::json!({
+        "title": pick("title"),
+        "author": pick("author"),
+        "icon": pick("icon"),
+        "tag": pick("tag"),
+        "url": pick("url"),
+        "body": pick("body"),
+        "channel": {
+            "channel_type": channel_field("channel_type"),
+            "name": channel_field("name"),
+        },
+    });
 
-    json = serde_json::to_string(&value)?;
+    let json = serde_json::to_string(&minimal)?;
     if json.len() <= MAX_PUSH_PAYLOAD_BYTES {
         return Ok(json);
     }
 
-    if let Some(body) = value.get("body").and_then(|b| b.as_str()).map(str::to_string) {
-        value["body"] = serde_json::Value::String(truncate_chars(&body, SHRUNK_BODY_CHARS));
+    if let Some(body) = minimal.get("body").and_then(|b| b.as_str()).map(str::to_string) {
+        minimal["body"] = serde_json::Value::String(truncate_chars(&body, SHRUNK_BODY_CHARS));
     }
 
-    Ok(serde_json::to_string(&value)?)
+    Ok(serde_json::to_string(&minimal)?)
 }
 
 #[derive(Clone)]
@@ -333,6 +346,20 @@ mod tests {
         }
         assert_eq!(out["channel"]["name"], "general");
         assert!(!out["body"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn small_body_but_huge_message_and_channel_still_fits() {
+        let mut value = notification("hi", "hi");
+        let ids: Vec<String> = (0..200).map(|i| format!("01KV3XZ0A4VB2ZTAXE0N{i:05}")).collect();
+        value["message"]["mentions"] = json!(ids);
+        value["channel"]["description"] = json!("d".repeat(2000));
+        let json = fit_payload(value).unwrap();
+        assert!(json.len() <= MAX_PUSH_PAYLOAD_BYTES, "was {}", json.len());
+
+        let out: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(out["body"], "hi");
+        assert_eq!(out["channel"]["name"], "general");
     }
 
     #[test]
