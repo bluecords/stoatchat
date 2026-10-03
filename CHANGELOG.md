@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/bluecords/stoatchat/compare/v0.31.0...v0.32.0) (2026-10-03)
+
+
+### Features
+
+* **pushd:** log every push decision (skipped, queued, accepted) ([#96](https://github.com/bluecords/stoatchat/issues/96)) ([d23bea6](https://github.com/bluecords/stoatchat/commit/d23bea664adaf9fb5738720da5253e95d2422689))
+
 ## [0.31.0](https://github.com/bluecords/stoatchat/compare/v0.30.1...v0.31.0) (2026-10-01)
 
 
