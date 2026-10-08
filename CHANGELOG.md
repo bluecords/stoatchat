@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/bluecords/stoatchat/compare/v0.32.0...v0.32.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **pushd:** friend-request web push links to the Friends page ([#100](https://github.com/bluecords/stoatchat/issues/100)) ([f637bb9](https://github.com/bluecords/stoatchat/commit/f637bb9c544b1aa220db812886c8316c4b57319f))
+
 ## [0.32.0](https://github.com/bluecords/stoatchat/compare/v0.31.0...v0.32.0) (2026-10-03)
 
 
