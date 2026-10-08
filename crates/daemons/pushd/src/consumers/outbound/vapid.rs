@@ -49,6 +49,13 @@ fn truncate_chars(text: &str, max_chars: usize) -> String {
     out
 }
 
+/// Where a friend-request push should take the member: the Friends page, which
+/// lists incoming requests. Without a `url` the web service worker falls back to
+/// the app root, so a tapped notification opened the app but not the request.
+fn friends_url(app_host: &str) -> String {
+    format!("{}/friends", app_host.trim_end_matches('/'))
+}
+
 /// Serialise a message notification so it always fits in a push.
 ///
 /// A payload that already fits is sent untouched. Otherwise it is rebuilt from
@@ -176,6 +183,7 @@ impl Consumer for VapidOutboundConsumer {
 
                 let mut body = HashMap::new();
                 body.insert("body", format!("{} sent you a friend request", name));
+                body.insert("url", friends_url(&revolt_config::config().await.hosts.app));
 
                 serde_json::to_string(&body)?
             }
@@ -192,6 +200,7 @@ impl Consumer for VapidOutboundConsumer {
 
                 let mut body = HashMap::new();
                 body.insert("body", format!("{} accepted your friend request", name));
+                body.insert("url", friends_url(&revolt_config::config().await.hosts.app));
 
                 serde_json::to_string(&body)?
             }
@@ -367,5 +376,11 @@ mod tests {
         let out = truncate_chars(&"é".repeat(400), 300);
         assert_eq!(out.chars().count(), 301);
         assert!(out.ends_with('…'));
+    }
+
+    #[test]
+    fn friends_url_is_the_friends_page_of_the_app() {
+        assert_eq!(friends_url("https://community.nac.social"), "https://community.nac.social/friends");
+        assert_eq!(friends_url("https://community.nac.social/"), "https://community.nac.social/friends");
     }
 }
