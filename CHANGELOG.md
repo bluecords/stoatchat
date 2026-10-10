@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.33.0](https://github.com/bluecords/stoatchat/compare/v0.32.1...v0.33.0) (2026-10-10)
+
+
+### Features
+
+* **delta:** finish a Discord claim's migration natively on Confirm ([#102](https://github.com/bluecords/stoatchat/issues/102)) ([3dcb8c9](https://github.com/bluecords/stoatchat/commit/3dcb8c9252dd7259d8d5d19033a802f2751272f2))
+* **push:** members who chose "All Messages" for a channel also get a push for it ([#103](https://github.com/bluecords/stoatchat/issues/103)) ([e6d959c](https://github.com/bluecords/stoatchat/commit/e6d959c1df553934bf43256aa345bfea3dc478c0))
+
 ## [0.32.1](https://github.com/bluecords/stoatchat/compare/v0.32.0...v0.32.1) (2026-10-08)
 
 
