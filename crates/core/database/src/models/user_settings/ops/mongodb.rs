@@ -64,4 +64,27 @@ impl AbstractUserSettings for MongoDb {
     async fn delete_user_settings(&self, id: &str) -> Result<()> {
         query!(self, delete_one_by_id, COL, id).map(|_| ())
     }
+
+    /// Every user who has stored a value under `key`, as (user id, stored string)
+    async fn fetch_users_with_setting(&'_ self, key: &str) -> Result<Vec<(String, String)>> {
+        let docs: Vec<Document> = query!(
+            self,
+            find_with_options,
+            COL,
+            doc! { key: { "$exists": true } },
+            ::mongodb::options::FindOptions::builder()
+                .projection(doc! { "_id": 1, key: 1 })
+                .build()
+        )?;
+
+        // Each setting is stored as [timestamp, string].
+        Ok(docs
+            .into_iter()
+            .filter_map(|doc| {
+                let id = doc.get_str("_id").ok()?.to_string();
+                let value = doc.get_array(key).ok()?.get(1)?.as_str()?.to_string();
+                Some((id, value))
+            })
+            .collect())
+    }
 }

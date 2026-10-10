@@ -16,4 +16,11 @@ pub trait AbstractUserSettings: Sync + Send {
 
     /// Delete all user settings
     async fn delete_user_settings(&self, id: &str) -> Result<()>;
+
+    /// Every user who has stored a value under `key`, as (user id, stored string).
+    ///
+    /// Used to find members who chose "All Messages" for a channel: that choice
+    /// is synced to the server as the `notifications` setting, but nothing on the
+    /// server read it before, so only @mentions and DMs ever produced a push.
+    async fn fetch_users_with_setting(&'_ self, key: &str) -> Result<Vec<(String, String)>>;
 }

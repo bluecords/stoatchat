@@ -43,4 +43,17 @@ impl AbstractUserSettings for ReferenceDb {
             Err(create_error!(NotFound))
         }
     }
+
+    /// Every user who has stored a value under `key`, as (user id, stored string)
+    async fn fetch_users_with_setting(&'_ self, key: &str) -> Result<Vec<(String, String)>> {
+        let user_settings = self.user_settings.lock().await;
+        Ok(user_settings
+            .iter()
+            .filter_map(|(id, settings)| {
+                settings
+                    .get(key)
+                    .map(|(_, value)| (id.to_string(), value.to_string()))
+            })
+            .collect())
+    }
 }

@@ -153,10 +153,33 @@ pub async fn handle_ack_event(
 
             let mut mass_mentions = vec![];
 
+            // The channel is only fetched if some message in this batch needs it.
+            let mut channel_for_push: Option<Channel> = None;
+
             for (push, message, recipients, silenced) in messages {
+                // Members who chose "All Messages" get the push but NOT an unread
+                // mention (that was counted above, from `recipients` only).
+                let push_only = if *silenced || push.is_none() {
+                    Vec::new()
+                } else {
+                    if channel_for_push.is_none() {
+                        channel_for_push = db.fetch_channel(&message.channel).await.ok();
+                    }
+                    match &channel_for_push {
+                        Some(channel) => {
+                            message
+                                .push_all_recipients(db, channel, recipients)
+                                .await
+                        }
+                        None => Vec::new(),
+                    }
+                };
+
                 if *silenced
                     || push.is_none()
-                    || (recipients.is_empty() && !message.contains_mass_push_mention())
+                    || (recipients.is_empty()
+                        && push_only.is_empty()
+                        && !message.contains_mass_push_mention())
                 {
                     debug!(
                         "Rejecting push: silenced: {}, recipient count: {}, push exists: {:?}",
@@ -172,8 +195,12 @@ pub async fn handle_ack_event(
                     push.as_ref().unwrap().message.id,
                     recipients.len()
                 );
+                // Mentioned users and "All Messages" users both get the push.
+                let mut audience = recipients.clone();
+                audience.extend(push_only);
+
                 if let Err(err) = amqp
-                    .message_sent(recipients.clone(), push.clone().unwrap())
+                    .message_sent(audience, push.clone().unwrap())
                     .await
                 {
                     revolt_config::capture_error(&err);

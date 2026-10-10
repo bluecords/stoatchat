@@ -763,8 +763,21 @@ impl Message {
             Channel::DirectMessage { .. } | Channel::Group { .. }
         );
 
+        // Server channels are queued even with no mention: members who chose "All
+        // Messages" get a push too, and the ack worker (not this request) works out
+        // who they are. Their choice was always synced to the server as the
+        // `notifications` user setting, but nothing read it, so a closed app only
+        // ever heard about @mentions and DMs.
+        let is_server_channel = matches!(
+            channel,
+            Channel::TextChannel { .. } | Channel::ForumChannel { .. }
+        );
+
         if !self.has_suppressed_notifications()
-            && (is_dm_or_group || self.mentions.is_some() || self.contains_mass_push_mention())
+            && (is_dm_or_group
+                || is_server_channel
+                || self.mentions.is_some()
+                || self.contains_mass_push_mention())
         {
             // send Push notifications
             #[cfg(feature = "tasks")]
@@ -835,6 +848,89 @@ impl Message {
         } else {
             false
         }
+    }
+
+    /// Members who should get a push for this message because they chose "All
+    /// Messages" for its channel (or for the server, with no channel choice).
+    /// Called from the ack worker, after the message is saved and sent.
+    ///
+    /// Left out: the author, anyone already mentioned (they get the mention push),
+    /// anyone who cannot see the channel (a push carries the message text), system
+    /// notices such as "X pinned a message", and anyone an @everyone / role ping
+    /// already reaches (that has its own push, so this would be a second one).
+    /// Any failure returns nobody: this only ever ADDS opted-in members.
+    pub(crate) async fn push_all_recipients(
+        &self,
+        db: &Database,
+        channel: &Channel,
+        already_mentioned: &[String],
+    ) -> Vec<String> {
+        let (Channel::TextChannel { id, server, .. } | Channel::ForumChannel { id, server, .. }) =
+            channel
+        else {
+            return Vec::new();
+        };
+
+        if self.system.is_some() || self.has_suppressed_notifications() {
+            return Vec::new();
+        }
+
+        let mentions_everyone = self
+            .flags
+            .map(|flags| MessageFlagsValue(flags).has(MessageFlags::MentionsEveryone))
+            .unwrap_or(false);
+        if mentions_everyone {
+            return Vec::new();
+        }
+
+        let stored = match db.fetch_users_with_setting("notifications").await {
+            Ok(stored) => stored,
+            Err(err) => {
+                revolt_config::capture_error(&err);
+                return Vec::new();
+            }
+        };
+
+        let now_ms = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis() as i64)
+            .unwrap_or(0);
+
+        let candidates: Vec<String> = stored
+            .into_iter()
+            .filter(|(user, _)| *user != self.author && !already_mentioned.contains(user))
+            .filter(|(_, json)| wants_every_message(json, id, server, now_ms))
+            .map(|(user, _)| user)
+            .collect();
+
+        if candidates.is_empty() {
+            return Vec::new();
+        }
+
+        let members = match db.fetch_members(server, &candidates).await {
+            Ok(members) => members,
+            Err(err) => {
+                revolt_config::capture_error(&err);
+                return Vec::new();
+            }
+        };
+
+        let can_see = BulkDatabasePermissionQuery::from_server_id(db, server)
+            .await
+            .channel(channel)
+            .members(&members)
+            .members_can_see_channel()
+            .await;
+
+        let pinged_roles = self.role_mentions.clone().unwrap_or_default();
+
+        members
+            .iter()
+            .filter(|member| *can_see.get(&member.id.user).unwrap_or(&false))
+            // a role ping already pushes to everyone holding that role
+            .filter(|member| !member.roles.iter().any(|role| pinged_roles.contains(role)))
+            .map(|member| member.id.user.clone())
+            .collect()
     }
 
     pub fn contains_mass_push_mention(&self) -> bool {
@@ -1510,5 +1606,118 @@ impl Interactions {
     /// Check if default initialisation of fields
     pub fn is_default(&self) -> bool {
         !self.restrict_reactions && self.reactions.is_none()
+    }
+}
+
+/// Whether one member's stored `notifications` setting asks for a push for every
+/// message in `channel`. The setting is the JSON the web client syncs:
+/// `{"server": {id: state}, "channel": {id: state}, "server_mutes": {id: mute},
+/// "channel_mutes": {id: mute}}`, where state is "all" | "mention" | "none" and a
+/// mute is `{}` (until turned off) or `{"until": unix ms}`. An explicit channel
+/// choice wins over the server one; a mute that has not expired wins over both.
+/// Anything unreadable means no push: this only ever ADDS opted-in members.
+fn wants_every_message(json: &str, channel: &str, server: &str, now_ms: i64) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return false;
+    };
+
+    let muted = |group: &str, id: &str| -> bool {
+        match value.get(group).and_then(|entries| entries.get(id)) {
+            None => false,
+            Some(mute) if mute.is_null() => false,
+            Some(mute) => match mute.get("until") {
+                // Timed mute: still muted until that moment.
+                Some(until) => until
+                    .as_i64()
+                    .or_else(|| until.as_f64().map(|f| f as i64))
+                    .map(|until| until > now_ms)
+                    .unwrap_or(true),
+                None => true,
+            },
+        }
+    };
+
+    if muted("channel_mutes", channel) || muted("server_mutes", server) {
+        return false;
+    }
+
+    match value
+        .get("channel")
+        .and_then(|entries| entries.get(channel))
+        .and_then(|state| state.as_str())
+    {
+        Some(state) => state == "all",
+        None => {
+            value
+                .get("server")
+                .and_then(|entries| entries.get(server))
+                .and_then(|state| state.as_str())
+                == Some("all")
+        }
+    }
+}
+
+#[cfg(test)]
+mod push_all_tests {
+    use super::wants_every_message;
+
+    const NOW: i64 = 1_000_000;
+
+    #[test]
+    fn channel_all_is_wanted() {
+        assert!(wants_every_message(r#"{"channel":{"c1":"all"}}"#, "c1", "s1", NOW));
+    }
+
+    #[test]
+    fn nothing_stored_is_not_wanted() {
+        assert!(!wants_every_message("{}", "c1", "s1", NOW));
+        assert!(!wants_every_message(r#"{"channel":{"c2":"all"}}"#, "c1", "s1", NOW));
+    }
+
+    #[test]
+    fn mentions_and_none_are_not_wanted() {
+        assert!(!wants_every_message(r#"{"channel":{"c1":"mention"}}"#, "c1", "s1", NOW));
+        assert!(!wants_every_message(r#"{"channel":{"c1":"none"}}"#, "c1", "s1", NOW));
+    }
+
+    #[test]
+    fn server_all_applies_without_a_channel_choice() {
+        assert!(wants_every_message(r#"{"server":{"s1":"all"}}"#, "c1", "s1", NOW));
+    }
+
+    #[test]
+    fn an_explicit_channel_choice_beats_the_server_choice() {
+        let json = r#"{"server":{"s1":"all"},"channel":{"c1":"mention"}}"#;
+        assert!(!wants_every_message(json, "c1", "s1", NOW));
+        let json = r#"{"server":{"s1":"mention"},"channel":{"c1":"all"}}"#;
+        assert!(wants_every_message(json, "c1", "s1", NOW));
+    }
+
+    #[test]
+    fn an_open_ended_mute_wins() {
+        let json = r#"{"channel":{"c1":"all"},"channel_mutes":{"c1":{}}}"#;
+        assert!(!wants_every_message(json, "c1", "s1", NOW));
+    }
+
+    #[test]
+    fn a_timed_mute_wins_only_until_it_expires() {
+        let json = r#"{"channel":{"c1":"all"},"channel_mutes":{"c1":{"until":2000000}}}"#;
+        assert!(!wants_every_message(json, "c1", "s1", NOW));
+        let json = r#"{"channel":{"c1":"all"},"channel_mutes":{"c1":{"until":500000}}}"#;
+        assert!(wants_every_message(json, "c1", "s1", NOW));
+    }
+
+    #[test]
+    fn a_server_mute_wins_and_a_cleared_mute_does_not() {
+        let json = r#"{"channel":{"c1":"all"},"server_mutes":{"s1":{}}}"#;
+        assert!(!wants_every_message(json, "c1", "s1", NOW));
+        let json = r#"{"channel":{"c1":"all"},"channel_mutes":{"c1":null}}"#;
+        assert!(wants_every_message(json, "c1", "s1", NOW));
+    }
+
+    #[test]
+    fn unreadable_settings_are_not_wanted() {
+        assert!(!wants_every_message("not json", "c1", "s1", NOW));
+        assert!(!wants_every_message("", "c1", "s1", NOW));
     }
 }
