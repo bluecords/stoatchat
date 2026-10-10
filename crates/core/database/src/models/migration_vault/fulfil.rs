@@ -399,7 +399,7 @@ pub async fn fulfil_discord_claim(
 
     if !out.roles_held_back.is_empty() {
         out.summary.push_str(&format!(
-            " These roles are at or above your own rank, so they were not given: {}. \
+            " These roles are at or above the rank of the admin who confirmed this, so they were not given: {}. \
              Ask an admin who outranks them.",
             join_names(&out.roles_held_back)
         ));
