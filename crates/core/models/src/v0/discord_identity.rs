@@ -55,6 +55,17 @@ auto_derived!(
     /// both set, by an admin, or the claim counts for nothing: re-attribution
     /// hands over edit and delete rights on real posts, so a member's own word
     /// is not enough.
+    pub struct DiscordClaimFulfilment {
+        /// "done" | "waiting" | "needs_attention"
+        pub status: String,
+        /// One plain sentence for the admin: what NAC did for this member
+        pub summary: String,
+        /// When it finished
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub finished_at: Option<Timestamp>,
+    }
+
+    /// A member's claim on a Discord account, as shown to admins.
     pub struct DiscordIdentityClaim {
         /// Discord user id
         pub discord_id: String,
@@ -75,5 +86,9 @@ auto_derived!(
         /// When it was confirmed
         #[serde(skip_serializing_if = "Option::is_none")]
         pub confirmed_at: Option<Timestamp>,
+        /// What NAC did for this member when the claim was confirmed, if it has
+        /// been run. Only ever filled in for admins.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub fulfilment: Option<DiscordClaimFulfilment>,
     }
 );

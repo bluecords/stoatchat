@@ -44,6 +44,7 @@ pub fn routes() -> (Vec<Route>, OpenApi) {
         member_attribution::attribution,
         discord_claims::fetch_discord_claims,
         discord_claims::confirm_discord_claim,
+        discord_claims::fulfil_discord_claim_route,
         discord_claims::reject_discord_claim,
         ban_create::ban,
         ban_remove::unban,
