@@ -253,6 +253,37 @@ impl Member {
             .ok();
         }
 
+        // If an admin already confirmed who this person was on the old platform
+        // BEFORE they joined, finish their migration now - roles, private
+        // channels, old posts - instead of waiting for someone to press a button.
+        // Off the join path: a failure here must never stop a member joining.
+        if let Ok(Some(identity)) = db.fetch_discord_identity_by_user(&user.id).await {
+            if identity.is_confirmed() {
+                let db = db.clone();
+                let server = server.clone();
+                async_std::task::spawn(async move {
+                    // Only the server the community was migrated into.
+                    if !crate::is_migration_server(&db, &server.id, true).await {
+                        return;
+                    }
+                    // Only a claim an admin confirmed BEFORE this person joined:
+                    // confirming saves a "waiting" record then. No record (the
+                    // claims already handled by hand) or a finished one (someone
+                    // who left and came back) is left alone, so rejoining can never
+                    // bring back a role that was taken away, or skip Pending.
+                    match db.fetch_fulfilment(&identity.id).await {
+                        Ok(Some(previous)) if previous.status == "waiting" => {}
+                        _ => return,
+                    }
+                    if let Err(error) =
+                        crate::fulfil_discord_claim(&db, &server, &identity, true, None).await
+                    {
+                        revolt_config::capture_error(&error);
+                    }
+                });
+            }
+        }
+
         Ok((member, channels))
     }
 

@@ -1,12 +1,23 @@
 use revolt_database::{
-    util::{permissions::DatabasePermissionQuery, reference::Reference},
-    Database, User,
+    fulfil_discord_claim, is_migration_server, util::{permissions::DatabasePermissionQuery, reference::Reference},
+    ClaimFulfilment, Database, User,
 };
 use revolt_models::v0;
 use revolt_permissions::{calculate_server_permissions, ChannelPermission};
 use revolt_result::{create_error, Result};
 use rocket::{serde::json::Json, State};
 use rocket_empty::EmptyResponse;
+
+/// Claims are global but only the server the community was migrated INTO may
+/// work with them. Without this, anyone could create a server of their own (where
+/// they hold ManageServer) and confirm their own claim, or reject other people's.
+async fn require_migration_server(db: &Database, target: &Reference<'_>) -> Result<()> {
+    let server = target.as_server(db).await?;
+    if !is_migration_server(db, &server.id, false).await {
+        return Err(create_error!(NotFound));
+    }
+    Ok(())
+}
 
 /// Require ManageServer on the target server.
 ///
@@ -68,12 +79,25 @@ pub async fn fetch_discord_claims(
     target: Reference<'_>,
 ) -> Result<Json<Vec<v0::DiscordIdentityClaim>>> {
     require_verify_access(db, &user, &target).await?;
+    require_migration_server(db, &target).await?;
+
+    let mut fulfilments: std::collections::HashMap<String, ClaimFulfilment> = db
+        .fetch_fulfilments()
+        .await?
+        .into_iter()
+        .map(|f| (f.id.clone(), f))
+        .collect();
 
     Ok(Json(
         db.fetch_discord_identities()
             .await?
             .into_iter()
             .map(|identity| v0::DiscordIdentityClaim {
+                fulfilment: fulfilments.remove(&identity.id).map(|f| v0::DiscordClaimFulfilment {
+                    status: f.status,
+                    summary: f.summary,
+                    finished_at: f.finished_at,
+                }),
                 discord_id: identity.id,
                 discord_username: identity.discord_username,
                 discord_display_name: identity.discord_display_name,
@@ -107,6 +131,7 @@ pub async fn confirm_discord_claim(
     discord_id: String,
 ) -> Result<EmptyResponse> {
     require_verify_access(db, &user, &target).await?;
+    require_migration_server(db, &target).await?;
 
     let identity = db
         .fetch_discord_identity(&discord_id)
@@ -132,7 +157,83 @@ pub async fn confirm_discord_claim(
     }
 
     db.confirm_discord_identity(&discord_id, &user.id).await?;
+
+    // Confirming is what triggers the rest: roles, private channels, old posts.
+    // A failure here must not undo the confirmation (the admin has still decided
+    // who this is) - it is recorded as "needs attention" so the screen says so
+    // and offers Try again, instead of being lost in a log.
+    let server = target.as_server(db).await?;
+    let identity = db
+        .fetch_discord_identity(&discord_id)
+        .await?
+        .ok_or_else(|| create_error!(NotFound))?;
+    if let Err(error) = fulfil_discord_claim(db, &server, &identity, true, Some(&user.id)).await {
+        revolt_config::capture_error(&error);
+        let _ = db
+            .save_fulfilment(&ClaimFulfilment {
+                id: identity.id.clone(),
+                user: identity.user.clone(),
+                status: "needs_attention".to_string(),
+                summary: "Confirmed, but NAC could not finish giving this member their roles and posts. Press Try again.".to_string(),
+                started_at: iso8601_timestamp::Timestamp::now_utc(),
+                finished_at: Some(iso8601_timestamp::Timestamp::now_utc()),
+                roles_added: vec![],
+                roles_removed: vec![],
+                roles_without_match: vec![],
+                roles_held_back: vec![],
+                posts_moved: 0,
+                reactions_added: 0,
+            })
+            .await;
+    }
+
     Ok(EmptyResponse)
+}
+
+/// # Finish A Discord Claim
+///
+/// Run (or re-run) everything that follows a confirmation for one member: their
+/// roles, private channels, old posts and reactions. Safe to repeat - it only
+/// adds. The claim must already be confirmed.
+///
+/// `dry_run=true` works out what would be done and returns it without changing
+/// anything.
+#[openapi(tag = "Server Members")]
+#[post("/<target>/discord-claims/<discord_id>/fulfil?<dry_run>")]
+pub async fn fulfil_discord_claim_route(
+    db: &State<Database>,
+    user: User,
+    target: Reference<'_>,
+    discord_id: String,
+    dry_run: Option<bool>,
+) -> Result<Json<v0::DiscordClaimFulfilment>> {
+    require_verify_access(db, &user, &target).await?;
+    require_migration_server(db, &target).await?;
+
+    let identity = db
+        .fetch_discord_identity(&discord_id)
+        .await?
+        .ok_or_else(|| create_error!(NotFound))?;
+    if !identity.is_confirmed() {
+        return Err(create_error!(FailedValidation {
+            error: "confirm this claim first".to_string()
+        }));
+    }
+
+    let server = target.as_server(db).await?;
+    let result = fulfil_discord_claim(
+        db,
+        &server,
+        &identity,
+        !dry_run.unwrap_or(false),
+        Some(&user.id),
+    )
+    .await?;
+    Ok(Json(v0::DiscordClaimFulfilment {
+        status: result.status,
+        summary: result.summary,
+        finished_at: result.finished_at,
+    }))
 }
 
 /// # Reject A Discord Claim
@@ -156,6 +257,7 @@ pub async fn reject_discord_claim(
     // Gate first, so an outsider cannot probe which claims exist from the
     // error they get back.
     require_verify_access(db, &user, &target).await?;
+    require_migration_server(db, &target).await?;
 
     let Some(identity) = db.fetch_discord_identity(&discord_id).await? else {
         return Ok(EmptyResponse);

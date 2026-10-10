@@ -17,6 +17,7 @@ fn to_model(identity: DiscordIdentity) -> v0::DiscordIdentityClaim {
         source: identity.source,
         confirmed_by: identity.confirmed_by,
         confirmed_at: identity.confirmed_at,
+        fulfilment: None,
     }
 }
 
