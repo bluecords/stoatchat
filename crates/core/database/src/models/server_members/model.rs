@@ -266,8 +266,17 @@ impl Member {
                     if !crate::is_migration_server(&db, &server.id, true).await {
                         return;
                     }
+                    // Only a claim an admin confirmed BEFORE this person joined:
+                    // confirming saves a "waiting" record then. No record (the
+                    // claims already handled by hand) or a finished one (someone
+                    // who left and came back) is left alone, so rejoining can never
+                    // bring back a role that was taken away, or skip Pending.
+                    match db.fetch_fulfilment(&identity.id).await {
+                        Ok(Some(previous)) if previous.status == "waiting" => {}
+                        _ => return,
+                    }
                     if let Err(error) =
-                        crate::fulfil_discord_claim(&db, &server, &identity, true).await
+                        crate::fulfil_discord_claim(&db, &server, &identity, true, None).await
                     {
                         revolt_config::capture_error(&error);
                     }

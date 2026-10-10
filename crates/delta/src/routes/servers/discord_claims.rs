@@ -167,7 +167,7 @@ pub async fn confirm_discord_claim(
         .fetch_discord_identity(&discord_id)
         .await?
         .ok_or_else(|| create_error!(NotFound))?;
-    if let Err(error) = fulfil_discord_claim(db, &server, &identity, true).await {
+    if let Err(error) = fulfil_discord_claim(db, &server, &identity, true, Some(&user.id)).await {
         revolt_config::capture_error(&error);
         let _ = db
             .save_fulfilment(&ClaimFulfilment {
@@ -221,7 +221,14 @@ pub async fn fulfil_discord_claim_route(
     }
 
     let server = target.as_server(db).await?;
-    let result = fulfil_discord_claim(db, &server, &identity, !dry_run.unwrap_or(false)).await?;
+    let result = fulfil_discord_claim(
+        db,
+        &server,
+        &identity,
+        !dry_run.unwrap_or(false),
+        Some(&user.id),
+    )
+    .await?;
     Ok(Json(v0::DiscordClaimFulfilment {
         status: result.status,
         summary: result.summary,

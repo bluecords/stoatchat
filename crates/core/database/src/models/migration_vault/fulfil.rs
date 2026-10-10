@@ -29,6 +29,8 @@
 //!   * the member's roles are re-read immediately before the write, so a role
 //!     edit made a moment earlier is not overwritten.
 
+use crate::util::permissions::DatabasePermissionQuery;
+use revolt_permissions::{calculate_server_permissions, ChannelPermission};
 use std::collections::BTreeMap;
 
 use iso8601_timestamp::Timestamp;
@@ -171,11 +173,59 @@ impl<'a> RoleBook<'a> {
     }
 }
 
+/// How far down the role ladder `who` may hand roles out. `None` = anything (the
+/// server owner). `Some(rank)` = only roles ranked strictly below `rank`; a LOWER
+/// number is a HIGHER rank, so `i64::MAX` means "nothing at all" (every role has a
+/// rank at or below it and is held back).
+///
+/// Nothing at all for: nobody, someone who has left the server, and anyone without
+/// AssignRoles. Confirming a claim is gated on ManageServer or VerifyMembers, which
+/// are NOT the permission that governs handing out roles; without this check a
+/// moderator who can only verify members could hand out roles through a claim.
+async fn grant_limit(db: &Database, server: &Server, who: Option<&str>) -> Option<i64> {
+    let Some(who) = who else {
+        return Some(i64::MAX);
+    };
+    if who == server.owner {
+        return None;
+    }
+    let (Ok(user), Ok(member)) = (db.fetch_user(who).await, db.fetch_member(&server.id, who).await)
+    else {
+        return Some(i64::MAX);
+    };
+
+    let mut query = DatabasePermissionQuery::new(db, &user)
+        .server(server)
+        .member(&member);
+    let can_assign = calculate_server_permissions(&mut query)
+        .await
+        .has_channel_permission(ChannelPermission::AssignRoles);
+
+    if can_assign {
+        Some(member.get_ranking(server))
+    } else {
+        Some(i64::MAX)
+    }
+}
+
+/// The more restrictive of two limits (see `grant_limit`).
+fn stricter(a: Option<i64>, b: Option<i64>) -> Option<i64> {
+    match (a, b) {
+        (None, other) | (other, None) => other,
+        (Some(a), Some(b)) => Some(a.max(b)),
+    }
+}
+
+/// `actor` is the person pressing the button right now. A retry runs with THEIR
+/// limit as well as the original confirmer's, so "Try again" can never grant more
+/// than the person pressing it could. `None` is an automatic run with nobody at
+/// the keyboard (the join hook), which uses the confirmer's limit alone.
 pub async fn fulfil_discord_claim(
     db: &Database,
     server: &Server,
     identity: &DiscordIdentity,
     apply: bool,
+    actor: Option<&str>,
 ) -> Result<ClaimFulfilment> {
     // Only for the server the community was migrated into.
     if !is_migration_server(db, &server.id, true).await {
@@ -223,18 +273,15 @@ pub async fn fulfil_discord_claim(
         basic_role: "Basic".to_string(),
     });
 
-    // 2. Who confirmed this, and what are they allowed to hand out?
-    let limit = match identity.confirmed_by.as_deref() {
-        Some(confirmer) if confirmer == server.owner => None,
-        Some(confirmer) => Some(
-            db.fetch_member(&server.id, confirmer)
-                .await
-                .map(|m| m.get_ranking(server))
-                // A confirmer who is no longer in the server can hand out nothing.
-                .unwrap_or(i64::MIN),
-        ),
-        None => Some(i64::MIN),
-    };
+    // 2. What are they allowed to hand out? Two people matter: whoever confirmed
+    // the claim, and whoever is pressing the button now. The stricter limit wins.
+    let limit = stricter(
+        grant_limit(db, server, identity.confirmed_by.as_deref()).await,
+        match actor {
+            Some(actor) => grant_limit(db, server, Some(actor)).await,
+            None => None,
+        },
+    );
 
     let mut sorted_roles: Vec<(&String, &crate::Role)> = server.roles.iter().collect();
     sorted_roles.sort_by(|a, b| a.0.cmp(b.0));
@@ -413,4 +460,33 @@ pub async fn fulfil_discord_claim(
     }
 
     finish(db, out, apply).await
+}
+
+#[cfg(test)]
+mod grant_limit_tests {
+    use super::stricter;
+
+    #[test]
+    fn the_owner_alone_is_unrestricted() {
+        assert_eq!(stricter(None, None), None);
+    }
+
+    #[test]
+    fn anyone_else_restricts_the_owner() {
+        assert_eq!(stricter(None, Some(10)), Some(10));
+        assert_eq!(stricter(Some(10), None), Some(10));
+    }
+
+    #[test]
+    fn the_lower_ranked_person_wins() {
+        // rank 10 is below rank 3 (a bigger number is a lower rank)
+        assert_eq!(stricter(Some(3), Some(10)), Some(10));
+        assert_eq!(stricter(Some(10), Some(3)), Some(10));
+    }
+
+    #[test]
+    fn nothing_beats_everything() {
+        assert_eq!(stricter(None, Some(i64::MAX)), Some(i64::MAX));
+        assert_eq!(stricter(Some(1), Some(i64::MAX)), Some(i64::MAX));
+    }
 }
