@@ -1,5 +1,5 @@
 use revolt_database::{
-    fulfil_discord_claim, util::{permissions::DatabasePermissionQuery, reference::Reference},
+    fulfil_discord_claim, is_migration_server, util::{permissions::DatabasePermissionQuery, reference::Reference},
     ClaimFulfilment, Database, User,
 };
 use revolt_models::v0;
@@ -7,6 +7,17 @@ use revolt_permissions::{calculate_server_permissions, ChannelPermission};
 use revolt_result::{create_error, Result};
 use rocket::{serde::json::Json, State};
 use rocket_empty::EmptyResponse;
+
+/// Claims are global but only the server the community was migrated INTO may
+/// work with them. Without this, anyone could create a server of their own (where
+/// they hold ManageServer) and confirm their own claim, or reject other people's.
+async fn require_migration_server(db: &Database, target: &Reference<'_>) -> Result<()> {
+    let server = target.as_server(db).await?;
+    if !is_migration_server(db, &server.id, false).await {
+        return Err(create_error!(NotFound));
+    }
+    Ok(())
+}
 
 /// Require ManageServer on the target server.
 ///
@@ -68,6 +79,7 @@ pub async fn fetch_discord_claims(
     target: Reference<'_>,
 ) -> Result<Json<Vec<v0::DiscordIdentityClaim>>> {
     require_verify_access(db, &user, &target).await?;
+    require_migration_server(db, &target).await?;
 
     let mut fulfilments: std::collections::HashMap<String, ClaimFulfilment> = db
         .fetch_fulfilments()
@@ -119,6 +131,7 @@ pub async fn confirm_discord_claim(
     discord_id: String,
 ) -> Result<EmptyResponse> {
     require_verify_access(db, &user, &target).await?;
+    require_migration_server(db, &target).await?;
 
     let identity = db
         .fetch_discord_identity(&discord_id)
@@ -167,6 +180,7 @@ pub async fn confirm_discord_claim(
                 roles_added: vec![],
                 roles_removed: vec![],
                 roles_without_match: vec![],
+                roles_held_back: vec![],
                 posts_moved: 0,
                 reactions_added: 0,
             })
@@ -194,6 +208,7 @@ pub async fn fulfil_discord_claim_route(
     dry_run: Option<bool>,
 ) -> Result<Json<v0::DiscordClaimFulfilment>> {
     require_verify_access(db, &user, &target).await?;
+    require_migration_server(db, &target).await?;
 
     let identity = db
         .fetch_discord_identity(&discord_id)
@@ -235,6 +250,7 @@ pub async fn reject_discord_claim(
     // Gate first, so an outsider cannot probe which claims exist from the
     // error they get back.
     require_verify_access(db, &user, &target).await?;
+    require_migration_server(db, &target).await?;
 
     let Some(identity) = db.fetch_discord_identity(&discord_id).await? else {
         return Ok(EmptyResponse);

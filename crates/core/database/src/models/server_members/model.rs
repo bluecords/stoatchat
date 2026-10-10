@@ -262,6 +262,10 @@ impl Member {
                 let db = db.clone();
                 let server = server.clone();
                 async_std::task::spawn(async move {
+                    // Only the server the community was migrated into.
+                    if !crate::is_migration_server(&db, &server.id, true).await {
+                        return;
+                    }
                     if let Err(error) =
                         crate::fulfil_discord_claim(&db, &server, &identity, true).await
                     {

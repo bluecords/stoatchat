@@ -43,6 +43,12 @@ auto_derived!(
         pub guild: String,
         /// "staged" -> "applied" -> "verified"
         pub status: String,
+        /// The NAC server this community was migrated INTO. Claims are global but
+        /// only this server's admins may confirm them and only this server's
+        /// joins trigger fulfilment - without this, anyone could create a server
+        /// of their own and confirm their own claim.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub nac_server: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub rules: Option<VaultRules>,
     }
@@ -100,6 +106,10 @@ auto_derived!(
         pub roles_removed: Vec<String>,
         #[serde(default)]
         pub roles_without_match: Vec<String>,
+        /// Roles that match but sit at or above the confirming admin's own rank:
+        /// reported, never given
+        #[serde(default)]
+        pub roles_held_back: Vec<String>,
         #[serde(default)]
         pub posts_moved: u64,
         #[serde(default)]

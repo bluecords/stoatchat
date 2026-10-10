@@ -93,7 +93,11 @@ impl AbstractMigrationVault for MongoDb {
             let result = self
                 .col::<Document>("messages")
                 .update_many(
-                    doc! { "_id": { "$in": slice } },
+                    // Only messages still wearing the migration masquerade: that is
+                    // what marks them as migrated and not yet handed to anyone, so a
+                    // natively written message (or one already given to someone)
+                    // can never be reassigned by a claim.
+                    doc! { "_id": { "$in": slice }, "masquerade": { "$exists": true } },
                     doc! { "$set": { "author": user_id }, "$unset": { "masquerade": "" } },
                 )
                 .await
@@ -107,7 +111,7 @@ impl AbstractMigrationVault for MongoDb {
     async fn count_messages_needing_reassign(
         &self,
         message_ids: &[String],
-        user_id: &str,
+        _user_id: &str,
     ) -> Result<u64> {
         let mut total = 0;
         for slice in message_ids.chunks(5000) {
@@ -115,10 +119,7 @@ impl AbstractMigrationVault for MongoDb {
                 .col::<Document>("messages")
                 .count_documents(doc! {
                     "_id": { "$in": slice },
-                    "$or": [
-                        { "author": { "$ne": user_id } },
-                        { "masquerade": { "$exists": true } }
-                    ]
+                    "masquerade": { "$exists": true }
                 })
                 .await
                 .map_err(|_| create_database_error!("count_documents", "messages"))?;
