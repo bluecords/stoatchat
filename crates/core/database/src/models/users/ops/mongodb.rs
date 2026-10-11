@@ -386,6 +386,56 @@ impl AbstractUsers for MongoDb {
             .map(|_| ())
             .map_err(|_| create_database_error!("update_one", "sessions"))
     }
+
+    async fn fetch_last_seen_for_users(
+        &self,
+        user_ids: &[String],
+    ) -> Result<std::collections::HashMap<String, String>> {
+        #[derive(serde::Deserialize)]
+        struct SeenRow {
+            user_id: String,
+            last_seen: String,
+        }
+
+        let mut cursor = self
+            .col::<SeenRow>("sessions")
+            .find(doc! {
+                "user_id": {
+                    "$in": user_ids
+                }
+            })
+            .with_options(
+                FindOptions::builder()
+                    .projection(doc! { "_id": 0, "user_id": 1, "last_seen": 1 })
+                    .build(),
+            )
+            .await
+            .map_err(|_| create_database_error!("find", "sessions"))?;
+
+        // `last_seen` is a fixed-format ISO 8601 UTC string written by
+        // `update_session_last_seen`, so the lexicographic maximum is the newest.
+        let mut newest: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        while let Some(row) = cursor.next().await {
+            match row {
+                Ok(row) => match newest.get(&row.user_id) {
+                    Some(current) if current.as_str() >= row.last_seen.as_str() => {}
+                    _ => {
+                        newest.insert(row.user_id, row.last_seen);
+                    }
+                },
+                // One malformed session document must not hide everyone else.
+                Err(err) if matches!(*err.kind, ::mongodb::error::ErrorKind::BsonDeserialization(_)) => {
+                    log::warn!("skipping a session with an unreadable last_seen: {err}");
+                }
+                // Anything else (a broken cursor, a lost connection) would
+                // return a TRUNCATED map, and a missing entry reads as "no
+                // session". Fail the call instead.
+                Err(_) => return Err(create_database_error!("find", "sessions")),
+            }
+        }
+
+        Ok(newest)
+    }
 }
 
 impl IntoDocumentPath for FieldsUser {

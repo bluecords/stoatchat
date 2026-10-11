@@ -86,4 +86,11 @@ pub trait AbstractUsers: Sync + Send {
     ) -> Result<()>;
 
     async fn update_session_last_seen(&self, session_id: &str, when: Timestamp) -> Result<()>;
+
+    /// The newest session `last_seen` (ISO 8601 string) for each of the given
+    /// users, keyed by user id. A user with no session is absent from the map.
+    async fn fetch_last_seen_for_users(
+        &self,
+        user_ids: &[String],
+    ) -> Result<std::collections::HashMap<String, String>>;
 }
