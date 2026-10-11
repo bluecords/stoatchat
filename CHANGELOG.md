@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/bluecords/stoatchat/compare/v0.33.0...v0.34.0) (2026-10-11)
+
+
+### Features
+
+* **servers:** last_seen on the admin member-attribution route ([#105](https://github.com/bluecords/stoatchat/issues/105)) ([0390559](https://github.com/bluecords/stoatchat/commit/0390559610ab1bd122ed72e0b75d5a02c5cb72b4))
+
 ## [0.33.0](https://github.com/bluecords/stoatchat/compare/v0.32.1...v0.33.0) (2026-10-10)
 
 
