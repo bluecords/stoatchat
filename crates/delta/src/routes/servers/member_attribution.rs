@@ -6,7 +6,8 @@ use rocket::{serde::json::Json, State};
 /// # Fetch Member Attribution
 ///
 /// Fetch how each member came to be in the server: who invited them, and with
-/// which code.
+/// which code, and when they last connected (`last_seen`, newest login session;
+/// it moves on connect or reconnect, not on every action).
 ///
 /// This is a separate, permission-gated route rather than two extra fields on
 /// the member object, because the member object is broadcast to every member of
@@ -34,11 +35,15 @@ pub async fn attribution(
     super::discord_claims::require_verify_access(db, &user, &target).await?;
     let server = target.as_server(db).await?;
 
+    let members = db.fetch_all_members(&server.id).await?;
+    let ids: Vec<String> = members.iter().map(|member| member.id.user.clone()).collect();
+    let mut last_seen = db.fetch_last_seen_for_users(&ids).await?;
+
     Ok(Json(
-        db.fetch_all_members(&server.id)
-            .await?
+        members
             .into_iter()
             .map(|member| v0::MemberAttribution {
+                last_seen: last_seen.remove(&member.id.user),
                 user: member.id.user,
                 invited_by: member.invited_by,
                 invite_code: member.invite_code,

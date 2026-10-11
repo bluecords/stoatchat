@@ -187,4 +187,12 @@ impl AbstractUsers for ReferenceDb {
     async fn update_session_last_seen(&self, _session_id: &str, _when: Timestamp) -> Result<()> {
         todo!()
     }
+
+    async fn fetch_last_seen_for_users(
+        &self,
+        _user_ids: &[String],
+    ) -> Result<std::collections::HashMap<String, String>> {
+        // The reference database keeps no sessions.
+        Ok(std::collections::HashMap::new())
+    }
 }

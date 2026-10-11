@@ -82,7 +82,7 @@ auto_derived!(
     /// Deliberately a SEPARATE response from `Member`, not extra fields on it.
     /// `Member` is broadcast to everyone in the server, and who vouched for
     /// whom is not everyone's business - in this community particularly. This
-    /// is served only to someone holding ManageServer.
+    /// is served to someone holding ManageServer or VerifyMembers.
     pub struct MemberAttribution {
         /// Id of the member
         pub user: String,
@@ -92,6 +92,17 @@ auto_derived!(
         /// The invite code used, when known
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         pub invite_code: Option<String>,
+        /// When this member last connected to NAC (the newest `last_seen` across
+        /// their login sessions, ISO 8601), absent if they have no session.
+        ///
+        /// Absent does NOT mean "never signed in": logging out, revoking
+        /// sessions and changing a password all delete the session row, and
+        /// with it this value. It also moves when the app CONNECTS or
+        /// reconnects, not on every action, so a tab left open for weeks without
+        /// reconnecting can look stale. Admin information like the rest of this
+        /// response.
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+        pub last_seen: Option<String>,
     }
 );
 
