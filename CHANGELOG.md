@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.1](https://github.com/bluecords/stoatchat/compare/v0.34.0...v0.34.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **embeds:** retry Facebook/Instagram preview fetches that come back empty ([#107](https://github.com/bluecords/stoatchat/issues/107)) ([c0ee5aa](https://github.com/bluecords/stoatchat/commit/c0ee5aaa0ac5557276ce0d66fc1ad042a719426c))
+
 ## [0.34.0](https://github.com/bluecords/stoatchat/compare/v0.33.0...v0.34.0) (2026-10-11)
 
 
