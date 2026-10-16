@@ -145,19 +145,29 @@ pub async fn generate(
         let semaphore = semaphore.clone();
         let host = host.to_string();
         tasks.push(spawn(async move {
-            let guard = semaphore.acquire().await;
+            let mut last = None;
 
-            if let Ok(mut response) = isahc::get_async(format!(
-                "{host}/embed?url={}",
-                url_escape::encode_component(&link)
-            ))
-            .await
-            {
+            for (attempt, delay) in FETCH_RETRY_DELAYS.iter().enumerate() {
+                if attempt > 0 {
+                    async_std::task::sleep(*delay).await;
+                }
+
+                // The permit is held only for the request itself, never while sleeping.
+                let guard = semaphore.acquire().await;
+                let embed = fetch_embed(&host, &link).await;
                 drop(guard);
-                response.json::<Embed>().await.ok()
-            } else {
-                None
+
+                let retry = needs_retry(&link, &embed);
+                if embed.is_some() {
+                    last = embed;
+                }
+
+                if !retry {
+                    break;
+                }
             }
+
+            last
         }));
     }
 
@@ -172,6 +182,51 @@ pub async fn generate(
         Ok(embeds)
     } else {
         Err(create_error!(LabelMe))
+    }
+}
+
+/// Pauses before each fetch attempt (the first is immediate). Facebook and
+/// Instagram answer the same URL one time and not the next, so a single
+/// attempt left some posts without a preview for good; measured 2026-10-16,
+/// 5 of 128 first-pass misses and 4 of those worked on a second try.
+const FETCH_RETRY_DELAYS: [std::time::Duration; 3] = [
+    std::time::Duration::from_secs(0),
+    std::time::Duration::from_secs(5),
+    std::time::Duration::from_secs(20),
+];
+
+/// Hosts known to answer inconsistently.
+fn is_flaky_host(link: &str) -> bool {
+    let link = link.to_ascii_lowercase();
+    ["facebook.com", "fb.watch", "instagram.com"]
+        .iter()
+        .any(|host| link.contains(host))
+}
+
+/// Ask january for one link's embed.
+async fn fetch_embed(host: &str, link: &str) -> Option<Embed> {
+    let mut response = isahc::get_async(format!(
+        "{host}/embed?url={}",
+        url_escape::encode_component(link)
+    ))
+    .await
+    .ok()?;
+
+    response.json::<Embed>().await.ok()
+}
+
+/// Whether another attempt could plausibly do better. Only flaky hosts are
+/// retried: for an ordinary site a failure is repeatable, and waiting would just
+/// delay every other preview in the same message.
+fn needs_retry(link: &str, embed: &Option<Embed>) -> bool {
+    if !is_flaky_host(link) {
+        return false;
+    }
+
+    match embed {
+        None => true,
+        Some(Embed::Website(metadata)) => metadata.image.is_none(),
+        Some(_) => false,
     }
 }
 
@@ -344,4 +399,23 @@ async fn keep_copy(
     db.insert_attachment(&file).await?;
 
     Ok(format!("{autumn}/attachments/{id}"))
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::{is_flaky_host, needs_retry};
+
+    #[test]
+    fn flaky_hosts_are_recognised() {
+        assert!(is_flaky_host("https://www.facebook.com/share/r/abc/"));
+        assert!(is_flaky_host("https://fb.watch/abc/"));
+        assert!(is_flaky_host("https://www.instagram.com/reel/abc/"));
+        assert!(!is_flaky_host("https://example.com/facebook"));
+    }
+
+    #[test]
+    fn only_flaky_hosts_are_retried_when_nothing_came_back() {
+        assert!(needs_retry("https://www.facebook.com/share/r/abc/", &None));
+        assert!(!needs_retry("https://example.com/page", &None));
+    }
 }
