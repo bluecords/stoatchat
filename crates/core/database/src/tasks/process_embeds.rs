@@ -57,21 +57,33 @@ pub async fn worker(db: Database) {
 
         spawn(async move {
             let config = config().await;
+            let content = task.content.clone();
             let embeds = generate(
                 task.content,
                 &config.hosts.january,
                 config.features.limits.global.message_embeds,
-                semaphore,
+                semaphore.clone(),
             )
             .await;
 
+            // Which links the first pass produced an embed for.
+            let mut have: HashSet<String> = HashSet::new();
+
             if let Ok(mut embeds) = embeds {
+                for embed in &embeds {
+                    if let Embed::Website(metadata) = embed {
+                        if let Some(url) = &metadata.original_url {
+                            have.insert(url.clone());
+                        }
+                    }
+                }
+
                 keep_copies_of_preview_images(&db, &task.id, &mut embeds).await;
 
                 if let Err(err) = Message::append(
                     &db,
-                    task.id,
-                    task.channel,
+                    task.id.clone(),
+                    task.channel.clone(),
                     AppendMessage {
                         embeds: Some(embeds),
                     },
@@ -81,6 +93,22 @@ pub async fn worker(db: Database) {
                     error!("Encountered an error appending to message: {:?}", err);
                 }
             }
+
+            // Facebook and Instagram answer a URL one time and not the next, so a
+            // link that got nothing is asked for again, off to the side: the
+            // other previews in the message have already been delivered.
+            for link in extract_links(&content, config.features.limits.global.message_embeds) {
+                if is_flaky_host(&link) && !have.contains(&link) {
+                    spawn(retry_link(
+                        db.clone(),
+                        task.id.clone(),
+                        task.channel.clone(),
+                        link,
+                        config.hosts.january.clone(),
+                        semaphore.clone(),
+                    ));
+                }
+            }
         });
     }
 }
@@ -88,12 +116,9 @@ pub async fn worker(db: Database) {
 static RE_CODE: Lazy<Regex> = Lazy::new(|| Regex::new("```(?:.|\n)+?```|`(?:.|\n)+?`").unwrap());
 static RE_IGNORED: Lazy<Regex> = Lazy::new(|| Regex::new("(<http.+>)").unwrap());
 
-pub async fn generate(
-    content: String,
-    host: &str,
-    max_embeds: usize,
-    semaphore: Arc<Semaphore>,
-) -> Result<Vec<Embed>> {
+/// Links in a message that previews are built for: code blocks, quoted lines
+/// and `<http...>` are skipped, anchors stripped, at most `max_embeds` kept.
+fn extract_links(content: &str, max_embeds: usize) -> Vec<String> {
     // Ignore code blocks.
     let content = RE_CODE.replace_all(&content, "");
 
@@ -120,7 +145,7 @@ pub async fn generate(
 
     // Process all links, stripping anchors and
     // only taking up to `max_embeds` of links.
-    let links: Vec<String> = finder
+    finder
         .links(&content)
         .map(|x| {
             x.as_str()
@@ -131,7 +156,16 @@ pub async fn generate(
         .collect::<HashSet<String>>()
         .into_iter()
         .take(max_embeds)
-        .collect();
+        .collect()
+}
+
+pub async fn generate(
+    content: String,
+    host: &str,
+    max_embeds: usize,
+    semaphore: Arc<Semaphore>,
+) -> Result<Vec<Embed>> {
+    let links = extract_links(&content, max_embeds);
 
     // If no links, fail out.
     if links.is_empty() {
@@ -145,29 +179,19 @@ pub async fn generate(
         let semaphore = semaphore.clone();
         let host = host.to_string();
         tasks.push(spawn(async move {
-            let mut last = None;
+            let guard = semaphore.acquire().await;
 
-            for (attempt, delay) in FETCH_RETRY_DELAYS.iter().enumerate() {
-                if attempt > 0 {
-                    async_std::task::sleep(*delay).await;
-                }
-
-                // The permit is held only for the request itself, never while sleeping.
-                let guard = semaphore.acquire().await;
-                let embed = fetch_embed(&host, &link).await;
+            if let Ok(mut response) = isahc::get_async(format!(
+                "{host}/embed?url={}",
+                url_escape::encode_component(&link)
+            ))
+            .await
+            {
                 drop(guard);
-
-                let retry = needs_retry(&link, &embed);
-                if embed.is_some() {
-                    last = embed;
-                }
-
-                if !retry {
-                    break;
-                }
+                response.json::<Embed>().await.ok()
+            } else {
+                None
             }
-
-            last
         }));
     }
 
@@ -185,17 +209,19 @@ pub async fn generate(
     }
 }
 
-/// Pauses before each fetch attempt (the first is immediate). Facebook and
-/// Instagram answer the same URL one time and not the next, so a single
-/// attempt left some posts without a preview for good; measured 2026-10-16,
-/// 5 of 128 first-pass misses and 4 of those worked on a second try.
-const FETCH_RETRY_DELAYS: [std::time::Duration; 3] = [
-    std::time::Duration::from_secs(0),
+/// Pauses before each retry of a link that produced no embed.
+const RETRY_DELAYS: [std::time::Duration; 2] = [
     std::time::Duration::from_secs(5),
     std::time::Duration::from_secs(20),
 ];
 
-/// Hosts known to answer inconsistently.
+/// Retries in progress, by (message, link), so two tasks for the same message
+/// (an edit queues a second one) cannot both push the same preview.
+static RETRYING: Lazy<std::sync::Mutex<HashSet<(String, String)>>> =
+    Lazy::new(|| std::sync::Mutex::new(HashSet::new()));
+
+/// Hosts known to answer inconsistently. Measured 2026-10-16: 5 of 128
+/// first-pass misses, and 4 of those worked on a second try.
 fn is_flaky_host(link: &str) -> bool {
     let link = link.to_ascii_lowercase();
     ["facebook.com", "fb.watch", "instagram.com"]
@@ -203,30 +229,84 @@ fn is_flaky_host(link: &str) -> bool {
         .any(|host| link.contains(host))
 }
 
-/// Ask january for one link's embed.
+/// Ask january for one link's embed, giving up after 20 seconds.
 async fn fetch_embed(host: &str, link: &str) -> Option<Embed> {
-    let mut response = isahc::get_async(format!(
+    let request = isahc::Request::get(format!(
         "{host}/embed?url={}",
         url_escape::encode_component(link)
     ))
-    .await
+    .timeout(std::time::Duration::from_secs(20))
+    .body(())
     .ok()?;
 
-    response.json::<Embed>().await.ok()
+    isahc::send_async(request).await.ok()?.json::<Embed>().await.ok()
 }
 
-/// Whether another attempt could plausibly do better. Only flaky hosts are
-/// retried: for an ordinary site a failure is repeatable, and waiting would just
-/// delay every other preview in the same message.
-fn needs_retry(link: &str, embed: &Option<Embed>) -> bool {
-    if !is_flaky_host(link) {
+/// Whether the message still asks for this link's preview and does not have it.
+async fn still_wanted(db: &Database, id: &str, link: &str) -> bool {
+    let Ok(message) = db.fetch_message(id).await else {
+        return false;
+    };
+
+    // Edited away, or deleted and replaced: nothing to add.
+    if !message.content.as_deref().unwrap_or_default().contains(link) {
         return false;
     }
 
-    match embed {
-        None => true,
-        Some(Embed::Website(metadata)) => metadata.image.is_none(),
-        Some(_) => false,
+    // Another task already delivered it.
+    !message.embeds.iter().flatten().any(|embed| {
+        matches!(embed, Embed::Website(m) if m.original_url.as_deref() == Some(link))
+    })
+}
+
+/// Retry one link that got no embed. Only ever adds a preview that is missing.
+async fn retry_link(
+    db: Database,
+    id: String,
+    channel: String,
+    link: String,
+    host: String,
+    semaphore: Arc<Semaphore>,
+) {
+    let key = (id.clone(), link.clone());
+    if !RETRYING.lock().map(|mut set| set.insert(key.clone())).unwrap_or(false) {
+        return;
+    }
+
+    for delay in RETRY_DELAYS {
+        async_std::task::sleep(delay).await;
+
+        let guard = semaphore.acquire().await;
+        let embed = fetch_embed(&host, &link).await;
+        drop(guard);
+
+        let Some(embed) = embed else {
+            continue;
+        };
+
+        if still_wanted(&db, &id, &link).await {
+            let mut embeds = vec![embed];
+            keep_copies_of_preview_images(&db, &id, &mut embeds).await;
+
+            if let Err(err) = Message::append(
+                &db,
+                id.clone(),
+                channel.clone(),
+                AppendMessage {
+                    embeds: Some(embeds),
+                },
+            )
+            .await
+            {
+                error!("Encountered an error appending retried embed: {:?}", err);
+            }
+        }
+
+        break;
+    }
+
+    if let Ok(mut set) = RETRYING.lock() {
+        set.remove(&key);
     }
 }
 
@@ -403,19 +483,25 @@ async fn keep_copy(
 
 #[cfg(test)]
 mod retry_tests {
-    use super::{is_flaky_host, needs_retry};
+    use super::{extract_links, is_flaky_host};
 
     #[test]
     fn flaky_hosts_are_recognised() {
         assert!(is_flaky_host("https://www.facebook.com/share/r/abc/"));
         assert!(is_flaky_host("https://fb.watch/abc/"));
         assert!(is_flaky_host("https://www.instagram.com/reel/abc/"));
-        assert!(!is_flaky_host("https://example.com/facebook"));
+        assert!(!is_flaky_host("https://example.com/page"));
     }
 
     #[test]
-    fn only_flaky_hosts_are_retried_when_nothing_came_back() {
-        assert!(needs_retry("https://www.facebook.com/share/r/abc/", &None));
-        assert!(!needs_retry("https://example.com/page", &None));
+    fn links_skip_code_quotes_and_angle_brackets() {
+        let links = extract_links(
+            "ok https://www.instagram.com/reel/a/
+> https://www.instagram.com/reel/b/
+<https://www.instagram.com/reel/c/>
+`https://www.instagram.com/reel/d/`",
+            5,
+        );
+        assert_eq!(links, vec!["https://www.instagram.com/reel/a/".to_string()]);
     }
 }
