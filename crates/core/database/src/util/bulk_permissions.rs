@@ -5,6 +5,7 @@ use revolt_permissions::{
     DEFAULT_PERMISSION_DIRECT_MESSAGE,
 };
 
+use super::permissions::{category_of, layer_override};
 use crate::{Channel, Database, Member, Server, User};
 
 #[derive(Clone)]
@@ -197,7 +198,7 @@ async fn calculate_members_permissions<'a>(
 ) -> HashMap<String, PermissionValue> {
     let mut resp = HashMap::new();
 
-    let (_, channel_role_permissions, channel_default_permissions) = match query
+    let (channel_id, channel_role_permissions, channel_default_permissions) = match query
         .channel
         .as_ref()
         .expect("A channel must be assigned to calculate channel permissions")
@@ -217,6 +218,34 @@ async fn calculate_members_permissions<'a>(
         } => (id, role_permissions, default_permissions),
         _ => panic!("Calculation of member permissions must be done on a server channel"),
     };
+
+    // Lay the channel's own overrides over its category's: the channel wins
+    // for each permission it sets, the category shows through for the rest.
+    let category = category_of(&query.server, &channel_id);
+
+    let channel_default_override: Option<Override> = match (
+        category.and_then(|category| category.default_permissions),
+        channel_default_permissions,
+    ) {
+        (Some(base), Some(top)) => Some(layer_override(base.into(), top.into())),
+        (Some(only), None) | (None, Some(only)) => Some(only.into()),
+        (None, None) => None,
+    };
+
+    let mut effective_role_overrides: HashMap<String, Override> = HashMap::new();
+    if let Some(category) = category {
+        for (id, permission) in &category.role_permissions {
+            effective_role_overrides.insert(id.clone(), (*permission).into());
+        }
+    }
+    for (id, permission) in &channel_role_permissions {
+        let top: Override = (*permission).into();
+        let layered = match effective_role_overrides.get(id) {
+            Some(base) => layer_override(base.clone(), top),
+            None => top,
+        };
+        effective_role_overrides.insert(id.clone(), layered);
+    }
 
     if query.users.is_none() {
         let ids: Vec<String> = query
@@ -298,19 +327,20 @@ async fn calculate_members_permissions<'a>(
         // Get the user's server permissions
         let mut permission = calculate_server_permissions(&query.server, user, member);
 
-        if let Some(defaults) = channel_default_permissions {
-            permission.apply(defaults.into());
+        if let Some(defaults) = &channel_default_override {
+            permission.apply(defaults.clone());
         }
 
         // Get the applicable role overrides
-        let mut roles = channel_role_permissions
+        let mut roles = effective_role_overrides
             .iter()
             .filter(|(id, _)| member.roles.contains(id))
             .filter_map(|(id, permission)| {
-                query.server.roles.get(id).map(|role| {
-                    let v: Override = (*permission).into();
-                    (role.rank, v)
-                })
+                query
+                    .server
+                    .roles
+                    .get(id)
+                    .map(|role| (role.rank, permission.clone()))
             })
             .collect::<Vec<(i64, Override)>>();
 

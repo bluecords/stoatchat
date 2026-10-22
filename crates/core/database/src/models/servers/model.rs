@@ -192,6 +192,19 @@ auto_derived!(
         pub title: String,
         /// Channels in this category
         pub channels: Vec<String>,
+
+        /// Default permissions for everyone in this category's channels, unless
+        /// a channel sets its own for the same permission
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub default_permissions: Option<OverrideField>,
+
+        /// Permissions for roles in this category's channels, unless a channel
+        /// sets its own for the same role and permission
+        #[serde(
+            default = "HashMap::<String, OverrideField>::new",
+            skip_serializing_if = "HashMap::<String, OverrideField>::is_empty"
+        )]
+        pub role_permissions: HashMap<String, OverrideField>,
     }
 
     /// System message channel assignments
@@ -376,6 +389,43 @@ impl Server {
         let mut ordered_roles = self.roles.clone().into_iter().collect::<Vec<_>>();
         ordered_roles.sort_by(|(_, role_a), (_, role_b)| role_a.rank.cmp(&role_b.rank));
         ordered_roles
+    }
+
+    /// Set the permissions a category gives to a role (or, with no role, to
+    /// everyone) in the channels it holds. Channels still win for any
+    /// permission they set themselves.
+    pub async fn set_category_permissions(
+        &mut self,
+        db: &Database,
+        category_id: &str,
+        role_id: Option<&str>,
+        permissions: OverrideField,
+    ) -> Result<()> {
+        let mut categories = self.categories.clone().unwrap_or_default();
+
+        let category = categories
+            .iter_mut()
+            .find(|category| category.id == category_id)
+            .ok_or_else(|| create_error!(NotFound))?;
+
+        match role_id {
+            Some(role_id) => {
+                category
+                    .role_permissions
+                    .insert(role_id.to_string(), permissions);
+            }
+            None => category.default_permissions = Some(permissions),
+        }
+
+        self.update(
+            db,
+            PartialServer {
+                categories: Some(categories),
+                ..Default::default()
+            },
+            vec![],
+        )
+        .await
     }
 
     /// Set role permission on a server

@@ -1010,6 +1010,8 @@ impl From<crate::Category> for Category {
             id: value.id,
             title: value.title,
             channels: value.channels,
+            default_permissions: value.default_permissions,
+            role_permissions: value.role_permissions,
         }
     }
 }
@@ -1020,6 +1022,8 @@ impl From<Category> for crate::Category {
             id: value.id,
             title: value.title,
             channels: value.channels,
+            default_permissions: value.default_permissions,
+            role_permissions: value.role_permissions,
         }
     }
 }

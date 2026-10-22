@@ -15,6 +15,7 @@ mod member_fetch;
 mod member_fetch_all;
 mod member_remove;
 mod member_sponsor;
+mod category_permissions_set;
 mod permissions_set;
 mod permissions_set_default;
 mod roles_create;
@@ -54,6 +55,8 @@ pub fn routes() -> (Vec<Route>, OpenApi) {
         roles_edit::edit,
         roles_fetch::fetch,
         roles_delete::delete,
+        category_permissions_set::set_category_role_permission,
+        category_permissions_set::set_category_default_permissions,
         permissions_set::set_role_permission,
         permissions_set_default::set_default_server_permissions,
         emoji_list::list_emoji,

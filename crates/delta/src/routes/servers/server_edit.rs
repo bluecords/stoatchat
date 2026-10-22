@@ -147,6 +147,19 @@ pub async fn edit(
     if let Some(categories) = &mut partial.categories {
         let mut channel_ids = HashSet::new();
         for category in categories {
+            // Permissions are edited through their own routes (and need
+            // ManagePermissions). This route takes the whole list, and a client
+            // that renames or reorders sends categories back without them, so
+            // never let it set or wipe them: keep what is stored.
+            let stored = server
+                .categories
+                .as_ref()
+                .and_then(|list| list.iter().find(|c| c.id == category.id));
+            category.default_permissions = stored.and_then(|c| c.default_permissions);
+            category.role_permissions = stored
+                .map(|c| c.role_permissions.clone())
+                .unwrap_or_default();
+
             for channel in &category.channels {
                 if channel_ids.contains(channel) {
                     return Err(create_error!(InvalidOperation));

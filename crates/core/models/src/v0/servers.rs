@@ -183,6 +183,22 @@ auto_derived!(
         pub title: String,
         /// Channels in this category
         pub channels: Vec<String>,
+
+        /// Default permissions for everyone in this category's channels, unless
+        /// a channel sets its own for the same permission
+        #[cfg_attr(feature = "serde", serde(default, skip_serializing_if = "Option::is_none"))]
+        pub default_permissions: Option<OverrideField>,
+
+        /// Permissions for roles in this category's channels, unless a channel
+        /// sets its own for the same role and permission
+        #[cfg_attr(
+            feature = "serde",
+            serde(
+                default = "HashMap::<String, OverrideField>::new",
+                skip_serializing_if = "HashMap::<String, OverrideField>::is_empty"
+            )
+        )]
+        pub role_permissions: HashMap<String, OverrideField>,
     }
 
     /// System message channel assignments
