@@ -25,9 +25,11 @@ async fn sync_category_voice(
         .unwrap_or_default();
 
     for channel_id in channel_ids {
-        let channel = Reference::from_unchecked(&channel_id)
-            .as_channel(db)
-            .await?;
+        // the change is already saved: a channel that no longer exists (its id
+        // can linger in the category) must not turn that into an error
+        let Ok(channel) = Reference::from_unchecked(&channel_id).as_channel(db).await else {
+            continue;
+        };
 
         sync_voice_permissions(db, voice_client, &channel, Some(server), role_id).await?;
     }

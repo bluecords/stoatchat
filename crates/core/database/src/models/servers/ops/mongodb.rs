@@ -2,6 +2,8 @@ use bson::{to_document, Bson, Document};
 use futures::StreamExt;
 use revolt_result::Result;
 
+use revolt_permissions::OverrideField;
+
 use crate::{FieldsRole, FieldsServer, PartialRole, PartialServer, Role, Server};
 use crate::{IntoDocumentPath, MongoDb};
 
@@ -62,6 +64,43 @@ impl AbstractServers for MongoDb {
         .map(|_| ())
     }
 
+    /// Set what one category gives a role (or, with no role, everyone)
+    async fn set_category_permission(
+        &self,
+        server_id: &str,
+        category_id: &str,
+        role_id: Option<&str>,
+        permissions: OverrideField,
+    ) -> Result<()> {
+        let field = match role_id {
+            Some(role_id) => format!("categories.$[c].role_permissions.{role_id}"),
+            None => "categories.$[c].default_permissions".to_string(),
+        };
+
+        let result = self
+            .col::<Document>(COL)
+            .update_one(
+                doc! {
+                    "_id": server_id,
+                    "categories.id": category_id
+                },
+                doc! {
+                    "$set": {
+                        field: permissions
+                    }
+                },
+            )
+            .array_filters(vec![doc! { "c.id": category_id }])
+            .await
+            .map_err(|_| create_database_error!("update_one", "servers"))?;
+
+        if result.matched_count == 0 {
+            return Err(create_error!(NotFound));
+        }
+
+        Ok(())
+    }
+
     /// Delete a server by its id
     async fn delete_server(&self, id: &str) -> Result<()> {
         self.delete_associated_server_objects(id).await?;
@@ -111,6 +150,23 @@ impl AbstractServers for MongoDb {
     ///
     /// Also updates channels and members.
     async fn delete_role(&self, server_id: &str, role_id: &str) -> Result<()> {
+        // forget what any category gave this role (skipped for a server
+        // with no categories, where the array update would be an error)
+        self.col::<Document>(COL)
+            .update_one(
+                doc! {
+                    "_id": server_id,
+                    "categories": { "$exists": true }
+                },
+                doc! {
+                    "$unset": {
+                        "categories.$[].role_permissions.".to_owned() + role_id: 1_i32
+                    }
+                },
+            )
+            .await
+            .map_err(|_| create_database_error!("update_one", "servers"))?;
+
         self.col::<Document>("server_members")
             .update_many(
                 doc! {

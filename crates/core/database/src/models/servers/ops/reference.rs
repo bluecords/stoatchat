@@ -111,10 +111,39 @@ impl AbstractServers for ReferenceDb {
     /// Delete a role from a server
     ///
     /// Also updates channels and members.
+    async fn set_category_permission(
+        &self,
+        server_id: &str,
+        category_id: &str,
+        role_id: Option<&str>,
+        permissions: revolt_permissions::OverrideField,
+    ) -> Result<()> {
+        let mut servers = self.servers.lock().await;
+        let category = servers
+            .get_mut(server_id)
+            .and_then(|server| server.categories.as_mut())
+            .and_then(|categories| categories.iter_mut().find(|c| c.id == category_id))
+            .ok_or_else(|| create_error!(NotFound))?;
+
+        match role_id {
+            Some(role_id) => {
+                category
+                    .role_permissions
+                    .insert(role_id.to_string(), permissions);
+            }
+            None => category.default_permissions = Some(permissions),
+        }
+
+        Ok(())
+    }
+
     async fn delete_role(&self, server_id: &str, role_id: &str) -> Result<()> {
         let mut servers = self.servers.lock().await;
         if let Some(server) = servers.get_mut(server_id) {
             if server.roles.remove(role_id).is_some() {
+                for category in server.categories.iter_mut().flatten() {
+                    category.role_permissions.remove(role_id);
+                }
                 Ok(())
             } else {
                 Err(create_error!(NotFound))

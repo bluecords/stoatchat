@@ -401,31 +401,48 @@ impl Server {
         role_id: Option<&str>,
         permissions: OverrideField,
     ) -> Result<()> {
-        let mut categories = self.categories.clone().unwrap_or_default();
-
-        let category = categories
-            .iter_mut()
-            .find(|category| category.id == category_id)
-            .ok_or_else(|| create_error!(NotFound))?;
-
-        match role_id {
-            Some(role_id) => {
-                category
-                    .role_permissions
-                    .insert(role_id.to_string(), permissions);
-            }
-            None => category.default_permissions = Some(permissions),
+        if !self
+            .categories
+            .iter()
+            .flatten()
+            .any(|category| category.id == category_id)
+        {
+            return Err(create_error!(NotFound));
         }
 
-        self.update(
-            db,
-            PartialServer {
-                categories: Some(categories),
+        // one targeted write (not the whole category list), so two people
+        // editing different categories or roles at once cannot undo each other
+        db.set_category_permission(&self.id, category_id, role_id, permissions)
+            .await?;
+
+        if let Some(category) = self
+            .categories
+            .as_mut()
+            .and_then(|categories| categories.iter_mut().find(|c| c.id == category_id))
+        {
+            match role_id {
+                Some(role_id) => {
+                    category
+                        .role_permissions
+                        .insert(role_id.to_string(), permissions);
+                }
+                None => category.default_permissions = Some(permissions),
+            }
+        }
+
+        EventV1::ServerUpdate {
+            id: self.id.clone(),
+            data: PartialServer {
+                categories: self.categories.clone(),
                 ..Default::default()
-            },
-            vec![],
-        )
-        .await
+            }
+            .into(),
+            clear: vec![],
+        }
+        .p(self.id.clone())
+        .await;
+
+        Ok(())
     }
 
     /// Set role permission on a server

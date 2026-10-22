@@ -1,5 +1,7 @@
 use revolt_result::Result;
 
+use revolt_permissions::OverrideField;
+
 use crate::{FieldsRole, FieldsServer, PartialRole, PartialServer, Role, Server};
 
 #[cfg(feature = "mongodb")]
@@ -23,6 +25,18 @@ pub trait AbstractServers: Sync + Send {
         id: &str,
         partial: &PartialServer,
         remove: Vec<FieldsServer>,
+    ) -> Result<()>;
+
+    /// Set what one category gives a role (or, with no role, everyone)
+    ///
+    /// Changes only that one entry, so it cannot undo a concurrent edit to
+    /// another category or role the way rewriting the whole list would.
+    async fn set_category_permission(
+        &self,
+        server_id: &str,
+        category_id: &str,
+        role_id: Option<&str>,
+        permissions: OverrideField,
     ) -> Result<()>;
 
     /// Delete a server by its id
