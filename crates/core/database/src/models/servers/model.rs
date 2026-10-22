@@ -192,6 +192,19 @@ auto_derived!(
         pub title: String,
         /// Channels in this category
         pub channels: Vec<String>,
+
+        /// Default permissions for everyone in this category's channels, unless
+        /// a channel sets its own for the same permission
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub default_permissions: Option<OverrideField>,
+
+        /// Permissions for roles in this category's channels, unless a channel
+        /// sets its own for the same role and permission
+        #[serde(
+            default = "HashMap::<String, OverrideField>::new",
+            skip_serializing_if = "HashMap::<String, OverrideField>::is_empty"
+        )]
+        pub role_permissions: HashMap<String, OverrideField>,
     }
 
     /// System message channel assignments
@@ -376,6 +389,60 @@ impl Server {
         let mut ordered_roles = self.roles.clone().into_iter().collect::<Vec<_>>();
         ordered_roles.sort_by(|(_, role_a), (_, role_b)| role_a.rank.cmp(&role_b.rank));
         ordered_roles
+    }
+
+    /// Set the permissions a category gives to a role (or, with no role, to
+    /// everyone) in the channels it holds. Channels still win for any
+    /// permission they set themselves.
+    pub async fn set_category_permissions(
+        &mut self,
+        db: &Database,
+        category_id: &str,
+        role_id: Option<&str>,
+        permissions: OverrideField,
+    ) -> Result<()> {
+        if !self
+            .categories
+            .iter()
+            .flatten()
+            .any(|category| category.id == category_id)
+        {
+            return Err(create_error!(NotFound));
+        }
+
+        // one targeted write (not the whole category list), so two people
+        // editing different categories or roles at once cannot undo each other
+        db.set_category_permission(&self.id, category_id, role_id, permissions)
+            .await?;
+
+        if let Some(category) = self
+            .categories
+            .as_mut()
+            .and_then(|categories| categories.iter_mut().find(|c| c.id == category_id))
+        {
+            match role_id {
+                Some(role_id) => {
+                    category
+                        .role_permissions
+                        .insert(role_id.to_string(), permissions);
+                }
+                None => category.default_permissions = Some(permissions),
+            }
+        }
+
+        EventV1::ServerUpdate {
+            id: self.id.clone(),
+            data: PartialServer {
+                categories: self.categories.clone(),
+                ..Default::default()
+            }
+            .into(),
+            clear: vec![],
+        }
+        .p(self.id.clone())
+        .await;
+
+        Ok(())
     }
 
     /// Set role permission on a server

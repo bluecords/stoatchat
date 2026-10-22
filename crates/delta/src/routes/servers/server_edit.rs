@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use authifier::models::{totp::Totp, Account, ValidatedTicket};
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
-    Database, File, PartialServer, User,
+    Category, Database, File, PartialServer, User,
 };
 use revolt_models::v0;
 use revolt_permissions::{calculate_server_permissions, ChannelPermission};
@@ -66,6 +66,50 @@ pub async fn edit(
     // roles/permissions directly.
     if data.class_defaults.is_some() {
         permissions.throw_if_lacking_channel_permission(ChannelPermission::ManagePermissions)?;
+    }
+
+    // Categories now carry permissions, so reshaping one that has any is a
+    // permission change, not a cosmetic one: moving a channel out of a locked
+    // category would make it public, removing categories would wipe the
+    // permissions, and swapping ids would move them onto other channels.
+    // Renaming and reordering stay with Manage Channel.
+    let has_overrides = |category: &Category| {
+        category
+            .default_permissions
+            .is_some_and(|field| field.a != 0 || field.d != 0)
+            || category
+                .role_permissions
+                .values()
+                .any(|field| field.a != 0 || field.d != 0)
+    };
+
+    let stored_overridden: Vec<&Category> = server
+        .categories
+        .iter()
+        .flatten()
+        .filter(|category| has_overrides(category))
+        .collect();
+
+    if !stored_overridden.is_empty() {
+        let removing = data.remove.contains(&v0::FieldsServer::Categories);
+
+        let reshaping = data.categories.as_ref().is_some_and(|incoming| {
+            stored_overridden.iter().any(|stored| {
+                match incoming.iter().find(|category| category.id == stored.id) {
+                    None => true,
+                    Some(new) => {
+                        let old_channels: HashSet<&String> = stored.channels.iter().collect();
+                        let new_channels: HashSet<&String> = new.channels.iter().collect();
+                        old_channels != new_channels
+                    }
+                }
+            })
+        });
+
+        if removing || reshaping {
+            permissions
+                .throw_if_lacking_channel_permission(ChannelPermission::ManagePermissions)?;
+        }
     }
 
     // Check we are the server owner or privileged if changing sensitive fields
@@ -147,6 +191,19 @@ pub async fn edit(
     if let Some(categories) = &mut partial.categories {
         let mut channel_ids = HashSet::new();
         for category in categories {
+            // Permissions are edited through their own routes (and need
+            // ManagePermissions). This route takes the whole list, and a client
+            // that renames or reorders sends categories back without them, so
+            // never let it set or wipe them: keep what is stored.
+            let stored = server
+                .categories
+                .as_ref()
+                .and_then(|list| list.iter().find(|c| c.id == category.id));
+            category.default_permissions = stored.and_then(|c| c.default_permissions);
+            category.role_permissions = stored
+                .map(|c| c.role_permissions.clone())
+                .unwrap_or_default();
+
             for channel in &category.channels {
                 if channel_ids.contains(channel) {
                     return Err(create_error!(InvalidOperation));

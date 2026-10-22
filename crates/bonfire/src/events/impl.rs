@@ -549,6 +549,10 @@ impl State {
             EventV1::ServerUpdate {
                 id, data, clear, ..
             } => {
+                let categories_cleared = clear
+                    .iter()
+                    .any(|field| matches!(field, revolt_models::v0::FieldsServer::Categories));
+
                 if let Some(server) = self.cache.servers.get_mut(id) {
                     for field in clear {
                         server.remove_field(&field.clone().into());
@@ -557,7 +561,12 @@ impl State {
                     server.apply_options(data.clone().into());
                 }
 
-                if data.default_permissions.is_some() {
+                // category permissions are inherited by channels, so changing
+                // (or removing) categories can change what this user may see
+                if data.default_permissions.is_some()
+                    || data.categories.is_some()
+                    || categories_cleared
+                {
                     queue_server = Some(id.clone());
                 }
             }

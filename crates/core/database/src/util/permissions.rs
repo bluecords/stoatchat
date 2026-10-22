@@ -5,7 +5,7 @@ use revolt_permissions::{
     RelationshipStatus, DEFAULT_PERMISSION_DIRECT_MESSAGE,
 };
 
-use crate::{Channel, Database, Member, Role, Server, User};
+use crate::{Category, Channel, Database, Member, Role, Server, User};
 
 /// Resolve a role's effective permission override, blending its class default (if any)
 /// underneath its own explicit override.
@@ -62,6 +62,29 @@ fn resolve_role_channel_override(
         allow: (class_override.allow & !role_touched_bits) | role_override.allow,
         deny: (class_override.deny & !role_touched_bits) | role_override.deny,
     }
+}
+
+/// Lay one set of overrides over another: wherever `top` sets a permission
+/// (allow or deny) it wins, everywhere else `base` shows through.
+///
+/// Used to put a channel's own overrides over its category's, so a channel
+/// "inherits" the category except for the permissions it sets itself.
+pub fn layer_override(base: Override, top: Override) -> Override {
+    let top_touched_bits = top.allow | top.deny;
+
+    Override {
+        allow: (base.allow & !top_touched_bits) | top.allow,
+        deny: (base.deny & !top_touched_bits) | top.deny,
+    }
+}
+
+/// The category (if any) that holds this channel.
+pub fn category_of<'s>(server: &'s Server, channel_id: &str) -> Option<&'s Category> {
+    server
+        .categories
+        .as_ref()?
+        .iter()
+        .find(|category| category.channels.iter().any(|id| id == channel_id))
 }
 
 /// Permissions calculator
@@ -335,7 +358,21 @@ impl PermissionQuery for DatabasePermissionQuery<'_> {
                 | Cow::Owned(Channel::ForumChannel {
                     default_permissions,
                     ..
-                }) => default_permissions.unwrap_or_default().into(),
+                }) => {
+                    let own: Override = default_permissions.unwrap_or_default().into();
+
+                    // inherit the category's default for anything this channel
+                    // does not set itself
+                    let from_category: Override = self
+                        .server
+                        .as_ref()
+                        .and_then(|server| category_of(server, channel.id()))
+                        .and_then(|category| category.default_permissions)
+                        .unwrap_or_default()
+                        .into();
+
+                    layer_override(from_category, own)
+                }
                 _ => Default::default(),
             }
         } else {
@@ -383,7 +420,20 @@ impl PermissionQuery for DatabasePermissionQuery<'_> {
                             .iter()
                             .filter(|(id, _)| member_roles.contains(id))
                             .map(|(id, role)| {
-                                let explicit = role_permissions.get(id).map(|p| (*p).into());
+                                let own = role_permissions.get(id).map(|p| (*p).into());
+
+                                // inherit the category's override for this role for
+                                // anything the channel does not set itself
+                                let from_category: Option<Override> =
+                                    category_of(server, channel_id)
+                                        .and_then(|category| category.role_permissions.get(id))
+                                        .map(|p| (*p).into());
+
+                                let explicit = match (from_category, own) {
+                                    (Some(base), Some(top)) => Some(layer_override(base, top)),
+                                    (Some(only), None) | (None, Some(only)) => Some(only),
+                                    (None, None) => None,
+                                };
                                 let v = resolve_role_channel_override(
                                     role, server, channel_id, explicit,
                                 );
@@ -859,5 +909,118 @@ mod resolve_override_tests {
             resolved.deny & ChannelPermission::SendMessage as u64,
             ChannelPermission::SendMessage as u64
         );
+    }
+}
+
+#[cfg(test)]
+mod category_inheritance_tests {
+    use std::collections::HashMap;
+
+    use revolt_permissions::{ChannelPermission, Override};
+
+    use crate::{Category, Server};
+
+    use super::{category_of, layer_override};
+
+    const VIEW: u64 = ChannelPermission::ViewChannel as u64;
+    const SEND: u64 = ChannelPermission::SendMessage as u64;
+
+    fn server_with_category() -> Server {
+        Server {
+            id: "server".into(),
+            owner: "owner".into(),
+            name: "Test Server".into(),
+            description: None,
+            channels: vec!["in".into(), "out".into()],
+            categories: Some(vec![Category {
+                id: "cat".into(),
+                title: "Category".into(),
+                channels: vec!["in".into()],
+                default_permissions: None,
+                role_permissions: HashMap::new(),
+            }]),
+            system_messages: None,
+            roles: HashMap::new(),
+            default_permissions: 0,
+            class_defaults: HashMap::new(),
+            default_member_role: None,
+            icon: None,
+            banner: None,
+            flags: None,
+            nsfw: false,
+            analytics: false,
+            discoverable: false,
+        }
+    }
+
+    #[test]
+    fn channel_inherits_what_it_does_not_set() {
+        // category denies viewing; channel says nothing about it
+        let category = Override {
+            allow: 0,
+            deny: VIEW,
+        };
+        let channel = Override {
+            allow: SEND,
+            deny: 0,
+        };
+
+        let effective = layer_override(category, channel);
+        assert_eq!(effective.deny, VIEW);
+        assert_eq!(effective.allow, SEND);
+    }
+
+    #[test]
+    fn channel_wins_for_a_permission_it_sets() {
+        // category denies viewing; this channel allows it again
+        let category = Override {
+            allow: 0,
+            deny: VIEW,
+        };
+        let channel = Override {
+            allow: VIEW,
+            deny: 0,
+        };
+
+        let effective = layer_override(category, channel);
+        assert_eq!(effective.allow, VIEW);
+        assert_eq!(effective.deny, 0);
+    }
+
+    #[test]
+    fn an_empty_channel_is_the_category() {
+        let category = Override {
+            allow: SEND,
+            deny: VIEW,
+        };
+
+        let effective = layer_override(category, Override::default());
+        assert_eq!(effective.allow, SEND);
+        assert_eq!(effective.deny, VIEW);
+    }
+
+    #[test]
+    fn channel_deny_beats_category_allow() {
+        let category = Override {
+            allow: SEND,
+            deny: 0,
+        };
+        let channel = Override {
+            allow: 0,
+            deny: SEND,
+        };
+
+        let effective = layer_override(category, channel);
+        assert_eq!(effective.allow, 0);
+        assert_eq!(effective.deny, SEND);
+    }
+
+    #[test]
+    fn finds_the_category_that_holds_a_channel() {
+        let server = server_with_category();
+
+        assert_eq!(category_of(&server, "in").map(|c| c.id.as_str()), Some("cat"));
+        assert!(category_of(&server, "out").is_none());
+        assert!(category_of(&server, "missing").is_none());
     }
 }
