@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.35.0](https://github.com/bluecords/stoatchat/compare/v0.34.1...v0.35.0) (2026-10-22)
+
+
+### Features
+
+* **categories:** categories carry permissions that their channels inherit ([#110](https://github.com/bluecords/stoatchat/issues/110)) ([351b8b2](https://github.com/bluecords/stoatchat/commit/351b8b2f70edf157c66a30a22242e915d4d696ee))
+
 ## [0.34.1](https://github.com/bluecords/stoatchat/compare/v0.34.0...v0.34.1) (2026-10-16)
 
 
