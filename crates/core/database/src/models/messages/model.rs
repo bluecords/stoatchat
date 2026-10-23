@@ -896,10 +896,24 @@ impl Message {
             .map(|elapsed| elapsed.as_millis() as i64)
             .unwrap_or(0);
 
+        if stored.is_empty() {
+            return Vec::new();
+        }
+
+        // the category the channel sits in (members can set a level for it)
+        let category: Option<String> = match db.fetch_server(server).await {
+            Ok(server) => crate::util::permissions::category_of(&server, id)
+                .map(|category| category.id.clone()),
+            Err(err) => {
+                revolt_config::capture_error(&err);
+                return Vec::new();
+            }
+        };
+
         let candidates: Vec<String> = stored
             .into_iter()
             .filter(|(user, _)| *user != self.author && !already_mentioned.contains(user))
-            .filter(|(_, json)| wants_every_message(json, id, server, now_ms))
+            .filter(|(_, json)| wants_every_message(json, id, category.as_deref(), server, now_ms))
             .map(|(user, _)| user)
             .collect();
 
@@ -1611,12 +1625,20 @@ impl Interactions {
 
 /// Whether one member's stored `notifications` setting asks for a push for every
 /// message in `channel`. The setting is the JSON the web client syncs:
-/// `{"server": {id: state}, "channel": {id: state}, "server_mutes": {id: mute},
-/// "channel_mutes": {id: mute}}`, where state is "all" | "mention" | "none" and a
-/// mute is `{}` (until turned off) or `{"until": unix ms}`. An explicit channel
-/// choice wins over the server one; a mute that has not expired wins over both.
+/// `{"server": {id: state}, "category": {id: state}, "channel": {id: state},
+/// "server_mutes": {id: mute}, "category_mutes": {id: mute}, "channel_mutes": {id: mute}}`,
+/// where state is "all" | "mention" | "none" and a mute is `{}` (until turned off)
+/// or `{"until": unix ms}`. The most specific choice wins (channel, then its
+/// category, then the server); a mute that has not expired, at any of the three
+/// levels, wins over all of them.
 /// Anything unreadable means no push: this only ever ADDS opted-in members.
-fn wants_every_message(json: &str, channel: &str, server: &str, now_ms: i64) -> bool {
+fn wants_every_message(
+    json: &str,
+    channel: &str,
+    category: Option<&str>,
+    server: &str,
+    now_ms: i64,
+) -> bool {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return false;
     };
@@ -1637,24 +1659,27 @@ fn wants_every_message(json: &str, channel: &str, server: &str, now_ms: i64) -> 
         }
     };
 
-    if muted("channel_mutes", channel) || muted("server_mutes", server) {
+    if muted("channel_mutes", channel)
+        || category.is_some_and(|category| muted("category_mutes", category))
+        || muted("server_mutes", server)
+    {
         return false;
     }
 
-    match value
-        .get("channel")
-        .and_then(|entries| entries.get(channel))
-        .and_then(|state| state.as_str())
-    {
-        Some(state) => state == "all",
-        None => {
-            value
-                .get("server")
-                .and_then(|entries| entries.get(server))
-                .and_then(|state| state.as_str())
-                == Some("all")
-        }
-    }
+    let state = |group: &str, id: &str| -> Option<String> {
+        value
+            .get(group)
+            .and_then(|entries| entries.get(id))
+            .and_then(|state| state.as_str())
+            .map(str::to_owned)
+    };
+
+    // most specific choice wins: channel, then its category, then the server
+    let choice = state("channel", channel)
+        .or_else(|| category.and_then(|category| state("category", category)))
+        .or_else(|| state("server", server));
+
+    choice.as_deref() == Some("all")
 }
 
 #[cfg(test)]
@@ -1665,59 +1690,97 @@ mod push_all_tests {
 
     #[test]
     fn channel_all_is_wanted() {
-        assert!(wants_every_message(r#"{"channel":{"c1":"all"}}"#, "c1", "s1", NOW));
+        assert!(wants_every_message(r#"{"channel":{"c1":"all"}}"#, "c1", None, "s1", NOW));
     }
 
     #[test]
     fn nothing_stored_is_not_wanted() {
-        assert!(!wants_every_message("{}", "c1", "s1", NOW));
-        assert!(!wants_every_message(r#"{"channel":{"c2":"all"}}"#, "c1", "s1", NOW));
+        assert!(!wants_every_message("{}", "c1", None, "s1", NOW));
+        assert!(!wants_every_message(r#"{"channel":{"c2":"all"}}"#, "c1", None, "s1", NOW));
     }
 
     #[test]
     fn mentions_and_none_are_not_wanted() {
-        assert!(!wants_every_message(r#"{"channel":{"c1":"mention"}}"#, "c1", "s1", NOW));
-        assert!(!wants_every_message(r#"{"channel":{"c1":"none"}}"#, "c1", "s1", NOW));
+        assert!(!wants_every_message(r#"{"channel":{"c1":"mention"}}"#, "c1", None, "s1", NOW));
+        assert!(!wants_every_message(r#"{"channel":{"c1":"none"}}"#, "c1", None, "s1", NOW));
     }
 
     #[test]
     fn server_all_applies_without_a_channel_choice() {
-        assert!(wants_every_message(r#"{"server":{"s1":"all"}}"#, "c1", "s1", NOW));
+        assert!(wants_every_message(r#"{"server":{"s1":"all"}}"#, "c1", None, "s1", NOW));
     }
 
     #[test]
     fn an_explicit_channel_choice_beats_the_server_choice() {
         let json = r#"{"server":{"s1":"all"},"channel":{"c1":"mention"}}"#;
-        assert!(!wants_every_message(json, "c1", "s1", NOW));
+        assert!(!wants_every_message(json, "c1", None, "s1", NOW));
         let json = r#"{"server":{"s1":"mention"},"channel":{"c1":"all"}}"#;
-        assert!(wants_every_message(json, "c1", "s1", NOW));
+        assert!(wants_every_message(json, "c1", None, "s1", NOW));
     }
 
     #[test]
     fn an_open_ended_mute_wins() {
         let json = r#"{"channel":{"c1":"all"},"channel_mutes":{"c1":{}}}"#;
-        assert!(!wants_every_message(json, "c1", "s1", NOW));
+        assert!(!wants_every_message(json, "c1", None, "s1", NOW));
     }
 
     #[test]
     fn a_timed_mute_wins_only_until_it_expires() {
         let json = r#"{"channel":{"c1":"all"},"channel_mutes":{"c1":{"until":2000000}}}"#;
-        assert!(!wants_every_message(json, "c1", "s1", NOW));
+        assert!(!wants_every_message(json, "c1", None, "s1", NOW));
         let json = r#"{"channel":{"c1":"all"},"channel_mutes":{"c1":{"until":500000}}}"#;
-        assert!(wants_every_message(json, "c1", "s1", NOW));
+        assert!(wants_every_message(json, "c1", None, "s1", NOW));
     }
 
     #[test]
     fn a_server_mute_wins_and_a_cleared_mute_does_not() {
         let json = r#"{"channel":{"c1":"all"},"server_mutes":{"s1":{}}}"#;
-        assert!(!wants_every_message(json, "c1", "s1", NOW));
+        assert!(!wants_every_message(json, "c1", None, "s1", NOW));
         let json = r#"{"channel":{"c1":"all"},"channel_mutes":{"c1":null}}"#;
-        assert!(wants_every_message(json, "c1", "s1", NOW));
+        assert!(wants_every_message(json, "c1", None, "s1", NOW));
     }
 
     #[test]
     fn unreadable_settings_are_not_wanted() {
-        assert!(!wants_every_message("not json", "c1", "s1", NOW));
-        assert!(!wants_every_message("", "c1", "s1", NOW));
+        assert!(!wants_every_message("not json", "c1", None, "s1", NOW));
+        assert!(!wants_every_message("", "c1", None, "s1", NOW));
+    }
+
+    #[test]
+    fn a_category_choice_applies_without_a_channel_choice() {
+        let json = r#"{"category":{"k1":"all"}}"#;
+        assert!(wants_every_message(json, "c1", Some("k1"), "s1", NOW));
+        // a channel in some other category, or none, is not affected
+        assert!(!wants_every_message(json, "c1", Some("k2"), "s1", NOW));
+        assert!(!wants_every_message(json, "c1", None, "s1", NOW));
+    }
+
+    #[test]
+    fn category_beats_server_and_channel_beats_category() {
+        let json = r#"{"server":{"s1":"all"},"category":{"k1":"mention"}}"#;
+        assert!(!wants_every_message(json, "c1", Some("k1"), "s1", NOW));
+
+        let json = r#"{"server":{"s1":"mention"},"category":{"k1":"all"}}"#;
+        assert!(wants_every_message(json, "c1", Some("k1"), "s1", NOW));
+
+        let json = r#"{"category":{"k1":"all"},"channel":{"c1":"none"}}"#;
+        assert!(!wants_every_message(json, "c1", Some("k1"), "s1", NOW));
+
+        let json = r#"{"category":{"k1":"none"},"channel":{"c1":"all"}}"#;
+        assert!(wants_every_message(json, "c1", Some("k1"), "s1", NOW));
+    }
+
+    #[test]
+    fn a_category_mute_wins_over_everything() {
+        let json = r#"{"channel":{"c1":"all"},"category":{"k1":"all"},"category_mutes":{"k1":{}}}"#;
+        assert!(!wants_every_message(json, "c1", Some("k1"), "s1", NOW));
+
+        // expired timed mute does not count
+        let json = r#"{"category":{"k1":"all"},"category_mutes":{"k1":{"until":500000}}}"#;
+        assert!(wants_every_message(json, "c1", Some("k1"), "s1", NOW));
+
+        // a mute on another category does not apply
+        let json = r#"{"category":{"k1":"all"},"category_mutes":{"k2":{}}}"#;
+        assert!(wants_every_message(json, "c1", Some("k1"), "s1", NOW));
     }
 }
