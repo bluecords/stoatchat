@@ -209,9 +209,20 @@ impl AbstractChannels for MongoDb {
                 }
             };
 
-            if let Some(sys) = &server.system_messages {
-                let mut unset = doc! {};
+            let mut unset = doc! {};
 
+            // a deleted channel must not leave its notification default behind: the
+            // edit route refuses ids that are not in the server, so a stale one
+            // would make every later save of the defaults fail
+            if server
+                .notification_defaults
+                .as_ref()
+                .is_some_and(|defaults| defaults.channels.contains_key(&id))
+            {
+                unset.insert(format!("notification_defaults.channels.{id}"), 1_i32);
+            }
+
+            if let Some(sys) = &server.system_messages {
                 if let Some(cid) = &sys.user_joined {
                     if &id == cid {
                         unset.insert("system_messages.user_joined", 1_i32);
@@ -236,9 +247,10 @@ impl AbstractChannels for MongoDb {
                     }
                 }
 
-                if !unset.is_empty() {
-                    update.insert("$unset", unset);
-                }
+            }
+
+            if !unset.is_empty() {
+                update.insert("$unset", unset);
             }
 
             self.col::<Document>("servers")
