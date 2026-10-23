@@ -15,6 +15,47 @@ use revolt_database::{
 use revolt_models::v0::{MessageFlags, PushNotification};
 use revolt_result::ToRevoltError;
 
+/// Keep only the users who can see the channel (anyone missing from `can_see`
+/// is treated as unable to).
+fn only_viewers(
+    users: impl IntoIterator<Item = String>,
+    can_see: &HashMap<String, bool>,
+) -> Vec<String> {
+    users
+        .into_iter()
+        .filter(|user| *can_see.get(user).unwrap_or(&false))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::only_viewers;
+    use std::collections::HashMap;
+
+    #[test]
+    fn only_people_who_can_see_the_channel_are_kept() {
+        let can_see = HashMap::from([
+            ("a".to_string(), true),
+            ("b".to_string(), false),
+            ("c".to_string(), true),
+        ]);
+
+        let kept = only_viewers(
+            ["a", "b", "c", "d"].map(String::from),
+            &can_see,
+        );
+
+        // b cannot see it, d is unknown: both are left out
+        assert_eq!(kept, vec!["a".to_string(), "c".to_string()]);
+    }
+
+    #[test]
+    fn nobody_can_see_means_nobody_is_pinged() {
+        let kept = only_viewers(["a", "b"].map(String::from), &HashMap::new());
+        assert!(kept.is_empty());
+    }
+}
+
 #[derive(Clone)]
 #[allow(unused)]
 pub struct MassMessageConsumer {
@@ -156,10 +197,15 @@ impl Consumer for MassMessageConsumer {
                             }
                         }
 
-                        let userids: Vec<String> =
-                            chunk.iter().map(|member| member.id.user.clone()).collect();
-
-                        debug!("Userids in chunk: {:?}", userids);
+                        // @everyone is per channel, not per server: only people who
+                        // can see this channel are reached (and badged)
+                        let mut q = query.clone().members(&chunk);
+                        let can_see = q.members_can_see_channel().await;
+                        let userids = only_viewers(
+                            chunk.iter().map(|member| member.id.user.clone()),
+                            &can_see,
+                        );
+                        debug!("Userids in chunk who can see the channel: {:?}", userids);
 
                         if let Err(err) = self
                             .db
