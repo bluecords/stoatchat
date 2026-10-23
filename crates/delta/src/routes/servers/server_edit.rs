@@ -42,6 +42,7 @@ pub async fn edit(
         && data.banner.is_none()
         && data.system_messages.is_none()
         && data.categories.is_none()
+        && data.notification_defaults.is_none()
         // && data.nsfw.is_none()
         && data.flags.is_none()
         && data.analytics.is_none()
@@ -56,6 +57,7 @@ pub async fn edit(
         || data.icon.is_some()
         || data.banner.is_some()
         || data.system_messages.is_some()
+        || data.notification_defaults.is_some()
         || data.analytics.is_some()
         || !data.remove.is_empty()
     {
@@ -141,6 +143,7 @@ pub async fn edit(
         icon,
         banner,
         categories,
+        notification_defaults,
         system_messages,
         flags,
         // nsfw,
@@ -155,6 +158,7 @@ pub async fn edit(
         name,
         description,
         categories: categories.map(|v| v.into_iter().map(Into::into).collect()),
+        notification_defaults: notification_defaults.map(Into::into),
         system_messages: system_messages.map(Into::into),
         flags,
         // nsfw,
@@ -184,6 +188,25 @@ pub async fn edit(
         for id in system_messages.clone().into_channel_ids() {
             if !server.channels.contains(&id) {
                 return Err(create_error!(NotFound));
+            }
+        }
+    }
+
+    // Notification defaults: only known levels, and only this server's channels
+    if let Some(defaults) = &partial.notification_defaults {
+        if defaults
+            .server
+            .as_deref()
+            .is_some_and(|level| !matches!(level, "all" | "mention"))
+        {
+            return Err(create_error!(InvalidOperation));
+        }
+
+        for (channel_id, level) in &defaults.channels {
+            if !matches!(level.as_str(), "all" | "mention" | "none")
+                || !server.channels.contains(channel_id)
+            {
+                return Err(create_error!(InvalidOperation));
             }
         }
     }

@@ -31,6 +31,9 @@ auto_derived_partial!(
         /// Categories for this server
         #[serde(skip_serializing_if = "Option::is_none")]
         pub categories: Option<Vec<Category>>,
+        /// Notification levels an admin set for members who have not chosen their own
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub notification_defaults: Option<NotificationDefaults>,
         /// Configuration for sending system event messages
         #[serde(skip_serializing_if = "Option::is_none")]
         pub system_messages: Option<SystemMessageChannels>,
@@ -207,6 +210,21 @@ auto_derived!(
         pub role_permissions: HashMap<String, OverrideField>,
     }
 
+    /// Notification levels an admin set for members who have not chosen their own.
+    /// A member's own choice always wins over these.
+    #[derive(Default)]
+    pub struct NotificationDefaults {
+        /// Level for the whole server: "all" or "mention"
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub server: Option<String>,
+        /// Level per channel id: "all", "mention" or "none"
+        #[serde(
+            default = "HashMap::<String, String>::new",
+            skip_serializing_if = "HashMap::<String, String>::is_empty"
+        )]
+        pub channels: HashMap<String, String>,
+    }
+
     /// System message channel assignments
     pub struct SystemMessageChannels {
         /// ID of channel to send user join messages in
@@ -304,6 +322,7 @@ impl Server {
             analytics: false,
             banner: None,
             categories: None,
+            notification_defaults: None,
             discoverable: false,
             flags: None,
             icon: None,
@@ -670,6 +689,7 @@ mod tests {
                 description: None,
                 channels: vec![],
                 categories: None,
+                notification_defaults: None,
                 system_messages: None,
                 roles: HashMap::from([(role.id.clone(), role)]),
                 default_permissions: 0,

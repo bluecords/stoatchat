@@ -30,6 +30,12 @@ auto_derived_partial!(
         /// Categories for this server
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         pub categories: Option<Vec<Category>>,
+        /// Notification levels an admin set for members who have not chosen their own
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        pub notification_defaults: Option<NotificationDefaults>,
         /// Configuration for sending system event messages
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         pub system_messages: Option<SystemMessageChannels>,
@@ -201,6 +207,27 @@ auto_derived!(
         pub role_permissions: HashMap<String, OverrideField>,
     }
 
+    /// Notification levels an admin set for members who have not chosen their own.
+    /// A member's own choice always wins over these.
+    #[derive(Default)]
+    pub struct NotificationDefaults {
+        /// Level for the whole server: "all" or "mention"
+        #[cfg_attr(
+            feature = "serde",
+            serde(default, skip_serializing_if = "Option::is_none")
+        )]
+        pub server: Option<String>,
+        /// Level per channel id: "all", "mention" or "none"
+        #[cfg_attr(
+            feature = "serde",
+            serde(
+                default = "HashMap::<String, String>::new",
+                skip_serializing_if = "HashMap::<String, String>::is_empty"
+            )
+        )]
+        pub channels: HashMap<String, String>,
+    }
+
     /// System message channel assignments
     pub struct SystemMessageChannels {
         /// ID of channel to send user join messages in
@@ -299,6 +326,9 @@ auto_derived!(
         /// Category structure for server
         #[cfg_attr(feature = "validator", validate)]
         pub categories: Option<Vec<Category>>,
+        /// Notification defaults for members who have not chosen their own.
+        /// Replaces the whole object when present.
+        pub notification_defaults: Option<NotificationDefaults>,
         /// System message configuration
         pub system_messages: Option<SystemMessageChannels>,
 

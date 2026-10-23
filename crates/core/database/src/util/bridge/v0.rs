@@ -861,6 +861,7 @@ impl From<crate::Server> for Server {
             categories: value
                 .categories
                 .map(|categories| categories.into_iter().map(|v| v.into()).collect()),
+            notification_defaults: value.notification_defaults.map(|v| v.into()),
             system_messages: value.system_messages.map(|v| v.into()),
             roles: value
                 .roles
@@ -894,6 +895,7 @@ impl From<Server> for crate::Server {
             categories: value
                 .categories
                 .map(|categories| categories.into_iter().map(|v| v.into()).collect()),
+            notification_defaults: value.notification_defaults.map(|v| v.into()),
             system_messages: value.system_messages.map(|v| v.into()),
             roles: value
                 .roles
@@ -930,6 +932,7 @@ impl From<crate::PartialServer> for PartialServer {
             categories: value
                 .categories
                 .map(|categories| categories.into_iter().map(|v| v.into()).collect()),
+            notification_defaults: value.notification_defaults.map(|v| v.into()),
             system_messages: value.system_messages.map(|v| v.into()),
             roles: value
                 .roles
@@ -959,6 +962,7 @@ impl From<PartialServer> for crate::PartialServer {
             categories: value
                 .categories
                 .map(|categories| categories.into_iter().map(|v| v.into()).collect()),
+            notification_defaults: value.notification_defaults.map(|v| v.into()),
             system_messages: value.system_messages.map(|v| v.into()),
             roles: value
                 .roles
@@ -1566,6 +1570,25 @@ impl From<crate::VoiceInformation> for VoiceInformation {
     fn from(value: crate::VoiceInformation) -> Self {
         VoiceInformation {
             max_users: value.max_users,
+        }
+    }
+}
+
+
+impl From<crate::NotificationDefaults> for NotificationDefaults {
+    fn from(value: crate::NotificationDefaults) -> Self {
+        NotificationDefaults {
+            server: value.server,
+            channels: value.channels,
+        }
+    }
+}
+
+impl From<NotificationDefaults> for crate::NotificationDefaults {
+    fn from(value: NotificationDefaults) -> Self {
+        crate::NotificationDefaults {
+            server: value.server,
+            channels: value.channels,
         }
     }
 }
