@@ -34,6 +34,10 @@ on:
       tag:
         description: 'Image tag to build and push (for a manual/emergency build outside the normal release flow)'
         required: true
+      dry_run:
+        description: 'Build everything but push nothing (to time or test the build)'
+        type: boolean
+        default: false
   release:
     types: [published]
 
@@ -41,16 +45,27 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: nac-api-build
+  cancel-in-progress: false
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Where the build runs is a repo VARIABLE, so it can be switched back to GitHub's
+    # own machine without a code change: NAC_BUILD_RUNNER = ["self-hosted","nac-build"]
+    # builds on nac-prod-2 (12 cores, a saved compile cache); unset = ubuntu-latest.
+    runs-on: ${{ fromJSON(vars.NAC_BUILD_RUNNER || '"ubuntu-latest"') }}
+    env:
+      DRY_RUN: ${{ inputs.dry_run }}
     steps:
       - name: Free up disk space
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL || true
           df -h /
 
       - name: Add swap space (Rust link steps are memory-heavy)
+        if: runner.environment == 'github-hosted'
         run: |
           sudo swapoff /swapfile || true
           sudo rm -f /swapfile
@@ -87,12 +102,16 @@ jobs:
         # external deps (verified: it reports the 200+ deps as unchanged), so the
         # in-Docker `--locked` build can no longer fail on this race. No-op when
         # the lock is already correct.
-        run: cargo update --workspace
+        run: |
+          docker run --rm -v "$PWD":/w -w /w --user "$(id -u):$(id -g)" \
+            -e CARGO_HOME=/tmp/cargo -e HOME=/tmp \
+            rust:1.92.0-slim-bookworm cargo update --workspace
 
       - name: Build base image (compiles Rust workspace incl. NAC patches)
         run: |
           DOCKER_BUILDKIT=1 docker build \
             --build-arg TARGETARCH=amd64 \
+            --build-arg CARGO_JOBS=${{ vars.NAC_BUILD_JOBS || '4' }} \
             -t ghcr.io/stoatchat/base:latest \
             -f Dockerfile .
 
@@ -102,8 +121,8 @@ jobs:
             -t ghcr.io/bluecords/api:${{ steps.tag.outputs.tag }} \
             -t ghcr.io/bluecords/api:latest \
             -f crates/delta/Dockerfile .
-          docker push ghcr.io/bluecords/api:${{ steps.tag.outputs.tag }}
-          docker push ghcr.io/bluecords/api:latest
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/api:${{ steps.tag.outputs.tag }}" || docker push ghcr.io/bluecords/api:${{ steps.tag.outputs.tag }}
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/api:latest" || docker push ghcr.io/bluecords/api:latest
           echo "Pushed ghcr.io/bluecords/api:${{ steps.tag.outputs.tag }} (+ :latest)"
 
       - name: Build & push events image
@@ -112,8 +131,8 @@ jobs:
             -t ghcr.io/bluecords/events:${{ steps.tag.outputs.tag }} \
             -t ghcr.io/bluecords/events:latest \
             -f crates/bonfire/Dockerfile .
-          docker push ghcr.io/bluecords/events:${{ steps.tag.outputs.tag }}
-          docker push ghcr.io/bluecords/events:latest
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/events:${{ steps.tag.outputs.tag }}" || docker push ghcr.io/bluecords/events:${{ steps.tag.outputs.tag }}
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/events:latest" || docker push ghcr.io/bluecords/events:latest
           echo "Pushed ghcr.io/bluecords/events:${{ steps.tag.outputs.tag }} (+ :latest)"
 
       - name: Build & push crond image
@@ -122,8 +141,8 @@ jobs:
             -t ghcr.io/bluecords/crond:${{ steps.tag.outputs.tag }} \
             -t ghcr.io/bluecords/crond:latest \
             -f crates/daemons/crond/Dockerfile .
-          docker push ghcr.io/bluecords/crond:${{ steps.tag.outputs.tag }}
-          docker push ghcr.io/bluecords/crond:latest
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/crond:${{ steps.tag.outputs.tag }}" || docker push ghcr.io/bluecords/crond:${{ steps.tag.outputs.tag }}
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/crond:latest" || docker push ghcr.io/bluecords/crond:latest
           echo "Pushed ghcr.io/bluecords/crond:${{ steps.tag.outputs.tag }} (+ :latest)"
 
       - name: Build & push pushd image
@@ -132,6 +151,12 @@ jobs:
             -t ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }} \
             -t ghcr.io/bluecords/pushd:latest \
             -f crates/daemons/pushd/Dockerfile .
-          docker push ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }}
-          docker push ghcr.io/bluecords/pushd:latest
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }}" || docker push ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }}
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/pushd:latest" || docker push ghcr.io/bluecords/pushd:latest
           echo "Pushed ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }} (+ :latest)"
+
+      - name: Trim the build cache (self-hosted only)
+        if: always() && runner.environment == 'self-hosted'
+        run: |
+          docker builder prune -f --keep-storage 40GB || true
+          docker image prune -f || true

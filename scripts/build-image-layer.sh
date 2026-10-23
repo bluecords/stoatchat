@@ -62,9 +62,9 @@ deps() {
     tee crates/core/ratelimits/src/lib.rs
   
   if [ -z "$TARGETARCH" ]; then
-    cargo build -j 4 --locked --release
+    cargo build -j "${CARGO_JOBS:-4}" --locked --release
   else
-    cargo build -j 4 --locked --release --target "${BUILD_TARGET}"
+    cargo build -j "${CARGO_JOBS:-4}" --locked --release --target "${BUILD_TARGET}"
   fi
 }
 
@@ -86,11 +86,23 @@ apps() {
     crates/core/ratelimits/src/lib.rs
   
   if [ -z "$TARGETARCH" ]; then
-    cargo build -j 4 --locked --release
+    cargo build -j "${CARGO_JOBS:-4}" --locked --release
+    release_dir="${CARGO_TARGET_DIR:-target}/release"
   else
-    cargo build -j 4 --locked --release --target "${BUILD_TARGET}"
-    mv target _target && mv _target/"${BUILD_TARGET}" target
+    cargo build -j "${CARGO_JOBS:-4}" --locked --release --target "${BUILD_TARGET}"
+    release_dir="${CARGO_TARGET_DIR:-target}/${BUILD_TARGET}/release"
   fi
+
+  # The images copy their binary from target/release. When the build writes to a
+  # cache directory (CARGO_TARGET_DIR, a BuildKit cache mount that is NOT part of
+  # the image), copy the finished binaries to where the images look for them.
+  mkdir -p target/release
+  for bin in "${release_dir}"/revolt-*; do
+    case "${bin}" in
+      *.d) ;;
+      *) [ -f "${bin}" ] && cp "${bin}" target/release/ ;;
+    esac
+  done
 }
 
 if [ -z "$TARGETARCH" ]; then
