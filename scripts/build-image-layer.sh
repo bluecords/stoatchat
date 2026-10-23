@@ -97,10 +97,13 @@ apps() {
   # cache directory (CARGO_TARGET_DIR, a BuildKit cache mount that is NOT part of
   # the image), copy the finished binaries to where the images look for them.
   mkdir -p target/release
-  for bin in "${release_dir}"/revolt-*; do
+  for bin in "${release_dir}"/*; do
+    # every program the build made (revolt-* and also erase-account, which the
+    # crond image ships); skip cargo's own side files
+    [ -f "${bin}" ] && [ -x "${bin}" ] || continue
     case "${bin}" in
-      *.d) ;;
-      *) [ -f "${bin}" ] && cp "${bin}" target/release/ ;;
+      *.d | *.so | *.rlib | *.rmeta | *.a) ;;
+      *) cp "${bin}" target/release/ ;;
     esac
   done
 }
