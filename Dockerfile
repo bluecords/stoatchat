@@ -4,6 +4,8 @@ USER 0:0
 WORKDIR /home/rust/src
 
 ARG TARGETARCH
+# Parallel compile jobs: GitHub's small machine keeps 4, a bigger runner raises it
+ARG CARGO_JOBS=4
 
 # Install build requirements
 RUN dpkg --add-architecture "${TARGETARCH}"
@@ -35,8 +37,12 @@ COPY crates/services/gifbox/Cargo.toml ./crates/services/gifbox/
 COPY crates/daemons/crond/Cargo.toml ./crates/daemons/crond/
 COPY crates/daemons/pushd/Cargo.toml ./crates/daemons/pushd/
 COPY crates/daemons/voice-ingress/Cargo.toml ./crates/daemons/voice-ingress/
-RUN sh /tmp/build-image-layer.sh deps
+RUN --mount=type=cache,id=nac-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=nac-cargo-target,target=/cache/target,sharing=locked \
+    CARGO_TARGET_DIR=/cache/target CARGO_JOBS="${CARGO_JOBS}" sh /tmp/build-image-layer.sh deps
 
 # Build all apps
 COPY crates ./crates
-RUN sh /tmp/build-image-layer.sh apps
+RUN --mount=type=cache,id=nac-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=nac-cargo-target,target=/cache/target,sharing=locked \
+    CARGO_TARGET_DIR=/cache/target CARGO_JOBS="${CARGO_JOBS}" sh /tmp/build-image-layer.sh apps
