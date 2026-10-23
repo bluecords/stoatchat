@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/bluecords/stoatchat/compare/v0.36.0...v0.36.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **pushd:** [@everyone](https://github.com/everyone) only reaches people who can see the channel ([#114](https://github.com/bluecords/stoatchat/issues/114)) ([4104580](https://github.com/bluecords/stoatchat/commit/4104580a20eefe0222805cbec977865bd87e6dfd))
+
 ## [0.36.0](https://github.com/bluecords/stoatchat/compare/v0.35.0...v0.36.0) (2026-10-23)
 
 
