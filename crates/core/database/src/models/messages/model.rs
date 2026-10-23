@@ -927,9 +927,14 @@ impl Message {
 
         let saved: std::collections::HashMap<String, String> = stored.into_iter().collect();
 
+        let mut all_members: Option<Vec<crate::Member>> = None;
         let everyone: Vec<String> = if admin_all {
             match db.fetch_all_members(server).await {
-                Ok(members) => members.into_iter().map(|m| m.id.user).collect(),
+                Ok(members) => {
+                    let ids = members.iter().map(|m| m.id.user.clone()).collect();
+                    all_members = Some(members);
+                    ids
+                }
                 Err(err) => {
                     revolt_config::capture_error(&err);
                     return Vec::new();
@@ -965,12 +970,21 @@ impl Message {
             return Vec::new();
         }
 
-        let members = match db.fetch_members(server, &candidates).await {
-            Ok(members) => members,
-            Err(err) => {
-                revolt_config::capture_error(&err);
-                return Vec::new();
+        let members = match all_members {
+            // already loaded above: keep just the candidates
+            Some(all) => {
+                let wanted: HashSet<&String> = candidates.iter().collect();
+                all.into_iter()
+                    .filter(|member| wanted.contains(&member.id.user))
+                    .collect::<Vec<_>>()
             }
+            None => match db.fetch_members(server, &candidates).await {
+                Ok(members) => members,
+                Err(err) => {
+                    revolt_config::capture_error(&err);
+                    return Vec::new();
+                }
+            },
         };
 
         let can_see = BulkDatabasePermissionQuery::from_server_id(db, server)
@@ -1686,9 +1700,10 @@ fn wants_every_message(
     admin_server: Option<&str>,
     now_ms: i64,
 ) -> bool {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
-        return false;
-    };
+    // Unreadable saved settings mean the member chose nothing, the same as the app
+    // treats them: only an admin default can then say "all".
+    let value = serde_json::from_str::<serde_json::Value>(json)
+        .unwrap_or_else(|_| serde_json::json!({}));
 
     let muted = |group: &str, id: &str| -> bool {
         match value.get(group).and_then(|entries| entries.get(id)) {
@@ -1874,7 +1889,8 @@ mod push_all_tests {
     }
 
     #[test]
-    fn unreadable_settings_are_still_not_wanted_even_with_an_admin_default() {
-        assert!(!wants_every_message("not json", "c1", None, "s1", Some("all"), Some("all"), NOW));
+    fn unreadable_settings_count_as_chosen_nothing_so_an_admin_default_applies() {
+        assert!(wants_every_message("not json", "c1", None, "s1", Some("all"), None, NOW));
+        assert!(!wants_every_message("not json", "c1", None, "s1", None, None, NOW));
     }
 }
