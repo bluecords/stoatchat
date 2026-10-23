@@ -896,6 +896,10 @@ impl Message {
             .map(|elapsed| elapsed.as_millis() as i64)
             .unwrap_or(0);
 
+        if stored.is_empty() {
+            return Vec::new();
+        }
+
         // the category the channel sits in (members can set a level for it)
         let category: Option<String> = match db.fetch_server(server).await {
             Ok(server) => crate::util::permissions::category_of(&server, id)
