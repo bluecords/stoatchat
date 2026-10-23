@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/bluecords/stoatchat/compare/v0.35.0...v0.36.0) (2026-10-23)
+
+
+### Features
+
+* **push:** phone alerts follow a category's notification level and mute ([#112](https://github.com/bluecords/stoatchat/issues/112)) ([e539a0b](https://github.com/bluecords/stoatchat/commit/e539a0bf5a525c94bbba8a25fc2cbd12a2676dd8))
+
 ## [0.35.0](https://github.com/bluecords/stoatchat/compare/v0.34.1...v0.35.0) (2026-10-22)
 
 
