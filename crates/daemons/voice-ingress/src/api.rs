@@ -6,8 +6,9 @@ use revolt_database::{
     util::reference::Reference,
     voice::{
         create_voice_state, delete_channel_voice_state, delete_voice_state,
-        get_user_moved_from_voice, get_user_moved_to_voice, update_voice_state_tracks,
-        RoomMetadata, UserVoiceChannel, VoiceClient,
+        get_user_moved_from_voice, get_user_moved_to_voice, get_user_voice_channel_in_server,
+        get_voice_channel_members, get_voice_state, update_voice_state_tracks, RoomMetadata,
+        UserVoiceChannel, VoiceClient,
     },
     Database, AMQP,
 };
@@ -287,7 +288,49 @@ pub async fn ingress(
                 server_id: server_id.clone(),
             };
 
-            delete_channel_voice_state(&channel, &[]).await?;
+            // LiveKit drops a queued participant_left when an earlier webhook for the room
+            // keeps failing, which leaves people listed in the call on everyone's screen.
+            // The room is finished, so clear whoever is still recorded and tell clients
+            // they left. Skip anyone who has since moved to another channel or rejoined
+            // (their state belongs to a different room), and then leave the channel-level
+            // keys alone.
+            let parent_id = channel.server_id.as_ref().unwrap_or(&channel.id).clone();
+            let finished_at = Timestamp::UNIX_EPOCH.checked_add(Duration::seconds(event.created_at));
+            let mut room_in_use = false;
+
+            for user in get_voice_channel_members(&channel)
+                .await?
+                .unwrap_or_default()
+            {
+                let current = get_user_voice_channel_in_server(&user, &parent_id).await?;
+
+                if current.is_some_and(|current| &current != channel_id) {
+                    continue;
+                }
+
+                let rejoined = match (get_voice_state(&channel, &user).await?, finished_at) {
+                    (Some(state), Some(finished_at)) => state.joined_at > finished_at,
+                    _ => false,
+                };
+
+                if rejoined {
+                    room_in_use = true;
+                    continue;
+                }
+
+                delete_voice_state(&channel, &user).await?;
+
+                EventV1::VoiceChannelLeave {
+                    id: channel_id.clone(),
+                    user,
+                }
+                .p(channel_id.clone())
+                .await;
+            }
+
+            if !room_in_use {
+                delete_channel_voice_state(&channel, &[]).await?;
+            }
         }
         _ => {}
     };
