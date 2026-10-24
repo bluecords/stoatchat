@@ -1,12 +1,13 @@
 name: Build NAC API (patched)
 
-# Builds the custom bluecords/{api,events,crond,pushd} images from this fork
+# Builds the custom bluecords/{api,events,crond,pushd,voice-ingress} images from this fork
 # and publishes them under the REAL release-please version number - not a
 # nickname tag. The root Dockerfile compiles the Rust workspace (where NAC
 # patches live); crates/delta/Dockerfile, crates/bonfire/Dockerfile,
-# crates/daemons/crond/Dockerfile, and crates/daemons/pushd/Dockerfile each
+# crates/daemons/crond/Dockerfile, crates/daemons/pushd/Dockerfile, and
+# crates/daemons/voice-ingress/Dockerfile each
 # bundle one resulting binary into distroless and we push them to
-# ghcr.io/bluecords/{api,events,crond,pushd}.
+# ghcr.io/bluecords/{api,events,crond,pushd,voice-ingress}.
 #
 # Runs on a standard GitHub runner (the upstream workflow needs a self-hosted
 # arc-runner-set the fork doesn't have). Single-arch amd64 (matches the Linode).
@@ -154,6 +155,16 @@ jobs:
           [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }}" || docker push ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }}
           [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/pushd:latest" || docker push ghcr.io/bluecords/pushd:latest
           echo "Pushed ghcr.io/bluecords/pushd:${{ steps.tag.outputs.tag }} (+ :latest)"
+
+      - name: Build & push voice-ingress image
+        run: |
+          DOCKER_BUILDKIT=1 docker build \
+            -t ghcr.io/bluecords/voice-ingress:${{ steps.tag.outputs.tag }} \
+            -t ghcr.io/bluecords/voice-ingress:latest \
+            -f crates/daemons/voice-ingress/Dockerfile .
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/voice-ingress:${{ steps.tag.outputs.tag }}" || docker push ghcr.io/bluecords/voice-ingress:${{ steps.tag.outputs.tag }}
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/voice-ingress:latest" || docker push ghcr.io/bluecords/voice-ingress:latest
+          echo "Pushed ghcr.io/bluecords/voice-ingress:${{ steps.tag.outputs.tag }} (+ :latest)"
 
       - name: Trim the build cache (self-hosted only)
         if: always() && runner.environment == 'self-hosted'
