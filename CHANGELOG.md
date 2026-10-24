@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.2](https://github.com/bluecords/stoatchat/compare/v0.37.1...v0.37.2) (2026-10-24)
+
+
+### Bug Fixes
+
+* **voice:** clear everyone still listed when a call room finishes ([#121](https://github.com/bluecords/stoatchat/issues/121)) ([6c82c22](https://github.com/bluecords/stoatchat/commit/6c82c22600c0ce6c44fd72ae78c7dd9ba9fde5b5))
+
 ## [0.37.1](https://github.com/bluecords/stoatchat/compare/v0.37.0...v0.37.1) (2026-10-24)
 
 
