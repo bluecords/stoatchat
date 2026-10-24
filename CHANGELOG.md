@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.1](https://github.com/bluecords/stoatchat/compare/v0.37.0...v0.37.1) (2026-10-24)
+
+
+### Bug Fixes
+
+* **voice:** remove the target member from the call, not the requester ([#119](https://github.com/bluecords/stoatchat/issues/119)) ([70bfff8](https://github.com/bluecords/stoatchat/commit/70bfff89857b3e98d2785da036c554fc7239715a))
+
 ## [0.37.0](https://github.com/bluecords/stoatchat/compare/v0.36.1...v0.37.0) (2026-10-23)
 
 
