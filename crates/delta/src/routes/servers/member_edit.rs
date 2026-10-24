@@ -280,7 +280,7 @@ pub async fn edit(
         {
             let node = get_channel_node(&channel).await?.unwrap();
 
-            voice_client.remove_user(&node, &user.id, &channel).await?;
+            voice_client.remove_user(&node, &target_user.id, &channel).await?;
         };
     }
 
