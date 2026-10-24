@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.3](https://github.com/bluecords/stoatchat/compare/v0.37.2...v0.37.3) (2026-10-24)
+
+
+### Bug Fixes
+
+* **ci:** build the voice-ingress image from this fork ([#123](https://github.com/bluecords/stoatchat/issues/123)) ([fd5c043](https://github.com/bluecords/stoatchat/commit/fd5c0438ae804fb3ca7cf0439ef6026f8597223b))
+
 ## [0.37.2](https://github.com/bluecords/stoatchat/compare/v0.37.1...v0.37.2) (2026-10-24)
 
 
