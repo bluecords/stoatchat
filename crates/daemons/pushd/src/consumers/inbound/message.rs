@@ -54,16 +54,13 @@ impl Consumer for MessageConsumer {
         {
             let config = revolt_config::config().await;
             for session in sessions {
-                // This device is open right now and gets the message live.
-                if revolt_presence::is_session_connected(&session.id).await {
-                    log::info!(
-                        "Push skipped for user {} session {}: device is connected right now",
-                        session.user_id,
-                        session.id
-                    );
-                    continue;
-                }
-
+                // Deliberately NOT skipping sessions that have a live connection.
+                // "Connected" is not "in the foreground": a backgrounded phone
+                // keeps its websocket for minutes, so skipping those members
+                // meant they got no notification at all (measured 2026-10-29,
+                // 4+ minutes in the background and still skipped). Only the
+                // device knows whether the app is in front, so the web client's
+                // service worker drops the push when a focused window is open.
                 if let Some(sub) = session.subscription {
                     let mut sendable = PayloadToService {
                         notification: PayloadKind::MessageNotification(

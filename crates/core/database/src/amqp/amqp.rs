@@ -228,9 +228,11 @@ impl AMQP {
 
         let config = revolt_config::config().await;
 
-        // Online-ness is decided per device in pushd, which skips only the
-        // sessions that are connected right now. Filtering whole users here
-        // meant one open tab anywhere silenced every other device.
+        // pushd sends to every subscribed session; it no longer skips ones with
+        // a live connection (a backgrounded app keeps its websocket, so that
+        // silenced it). The client's service worker drops the push when the
+        // app is actually in front. Filtering whole users here would also have
+        // let one open tab anywhere silence every other device.
         let payload = MessageSentPayload {
             notification: payload,
             users: recipients,
