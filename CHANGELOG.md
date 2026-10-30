@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.4](https://github.com/bluecords/stoatchat/compare/v0.37.3...v0.37.4) (2026-10-30)
+
+
+### Bug Fixes
+
+* **pushd:** send web push to every subscribed session, do not skip connected ones ([#125](https://github.com/bluecords/stoatchat/issues/125)) ([68bad1f](https://github.com/bluecords/stoatchat/commit/68bad1f58d85d60fd6e711a076de23f5413a9925))
+
 ## [0.37.3](https://github.com/bluecords/stoatchat/compare/v0.37.2...v0.37.3) (2026-10-24)
 
 
