@@ -234,3 +234,24 @@ impl Database {
         }
     }
 }
+
+#[cfg(test)]
+mod email_template_tests {
+    /// The link must sit alone on its line. SMTP bodies with any line of 76
+    /// characters or more are sent quoted-printable, which wraps the line with
+    /// a soft break (`=` then newline) at column 75. With a 94-character
+    /// "Please navigate to: <url>" line that cut fell 13 characters into the
+    /// token, and clients that show the raw text part gave members a link with
+    /// a stray `=` in it: verification returned 401 and signup never finished.
+    #[test]
+    fn link_is_on_its_own_line() {
+        for (name, text) in [
+            ("verify", include_str!("../../templates/verify.nac.txt")),
+            ("reset", include_str!("../../templates/reset.nac.txt")),
+            ("deletion", include_str!("../../templates/deletion.nac.txt")),
+        ] {
+            let link_lines: Vec<&str> = text.lines().filter(|l| l.contains("{{url}}")).collect();
+            assert_eq!(link_lines, vec!["{{url}}"], "{name}.nac.txt");
+        }
+    }
+}
