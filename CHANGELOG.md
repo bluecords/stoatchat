@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.5](https://github.com/bluecords/stoatchat/compare/v0.37.4...v0.37.5) (2026-11-03)
+
+
+### Bug Fixes
+
+* **email:** put verify, reset and deletion links on their own line ([#127](https://github.com/bluecords/stoatchat/issues/127)) ([51320fa](https://github.com/bluecords/stoatchat/commit/51320fab1c62726a06a0b51a53531af048263f2b))
+
 ## [0.37.4](https://github.com/bluecords/stoatchat/compare/v0.37.3...v0.37.4) (2026-10-30)
 
 
