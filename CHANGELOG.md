@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.38.0](https://github.com/bluecords/stoatchat/compare/v0.37.5...v0.38.0) (2026-11-06)
+
+
+### Features
+
+* **permissions:** record who changes permissions, roles and categories ([#129](https://github.com/bluecords/stoatchat/issues/129)) ([71098e4](https://github.com/bluecords/stoatchat/commit/71098e4d694fda1d779c78f2d5d58d0b623afbd1))
+
+
+### Bug Fixes
+
+* **january:** build embeds for Amazon product links behind the captcha ([#130](https://github.com/bluecords/stoatchat/issues/130)) ([7368f75](https://github.com/bluecords/stoatchat/commit/7368f75a165a4768e94f5d6f026ef2d44b5e4741))
+
 ## [0.37.5](https://github.com/bluecords/stoatchat/compare/v0.37.4...v0.37.5) (2026-11-03)
 
 
