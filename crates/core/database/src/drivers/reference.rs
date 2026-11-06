@@ -4,7 +4,8 @@ use futures::lock::Mutex;
 
 use crate::{
     Bot, Channel, ChannelCompositeKey, ChannelUnread, ConsentRecord, DiscordIdentity,
-    DiscordMember, Emoji, File, FileHash, Invite, Member, MemberCompositeKey, Message, PolicyChange,
+    DiscordMember, Emoji, File, FileHash, Invite, Member, MemberCompositeKey, Message,
+    PermissionAuditEntry, PolicyChange,
     RatelimitEvent, Report, Server, ServerBan, Snapshot, User, UserSettings, Webhook,
 };
 
@@ -24,6 +25,7 @@ database_derived!(
         pub consent_records: Arc<Mutex<HashMap<String, ConsentRecord>>>,
         pub discord_members: Arc<Mutex<HashMap<String, DiscordMember>>>,
         pub discord_identities: Arc<Mutex<HashMap<String, DiscordIdentity>>>,
+        pub permission_audit: Arc<Mutex<HashMap<String, PermissionAuditEntry>>>,
         pub policy_changes: Arc<Mutex<HashMap<String, PolicyChange>>>,
         pub ratelimit_events: Arc<Mutex<HashMap<String, RatelimitEvent>>>,
         pub user_settings: Arc<Mutex<HashMap<String, UserSettings>>>,

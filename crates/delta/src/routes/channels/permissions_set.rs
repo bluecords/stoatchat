@@ -1,5 +1,5 @@
 use revolt_database::{
-    util::{permissions::DatabasePermissionQuery, reference::Reference}, voice::{sync_voice_permissions, VoiceClient}, Channel, Database, User
+    util::{permissions::DatabasePermissionQuery, reference::Reference}, voice::{sync_voice_permissions, VoiceClient}, Channel, Database, PermissionAuditEntry, User
 };
 use revolt_models::v0;
 use revolt_permissions::{calculate_channel_permissions, ChannelPermission, Override};
@@ -61,11 +61,30 @@ pub async fn set_role_permissions(
             .throw_permission_override(current_value, &data.permissions)
             .await?;
 
+        let before: Option<Override> = match &channel {
+            Channel::TextChannel { role_permissions, .. }
+            | Channel::ForumChannel { role_permissions, .. } => {
+                role_permissions.get(&role_id).map(|p| (*p).into())
+            }
+            _ => None,
+        };
+        let after: Override = data.permissions.clone().into();
+
         let mut new_channel = channel.clone();
 
         new_channel
             .set_role_permission(db, &role_id, data.permissions.clone().into())
             .await?;
+
+        PermissionAuditEntry::new(&server.id, &user, "channel_role_permissions", channel.id())
+            .target_name(PermissionAuditEntry::channel_name(&channel))
+            .role(&role_id, Some(role.name.clone()))
+            .change(
+                PermissionAuditEntry::describe(before),
+                PermissionAuditEntry::describe(Some(after)),
+            )
+            .record(db)
+            .await;
 
         sync_voice_permissions(db, voice_client, &new_channel, Some(&server), Some(&role_id)).await?;
 

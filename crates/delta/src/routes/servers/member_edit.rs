@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use revolt_database::{
     events::client::EventV1,
@@ -11,7 +11,7 @@ use revolt_database::{
         set_user_moved_from_voice, set_user_moved_to_voice, sync_user_voice_permissions,
         UserVoiceChannel, VoiceClient,
     },
-    Database, File, PartialMember, User,
+    Database, File, PartialMember, PermissionAuditEntry, User,
 };
 use revolt_models::v0::{self, FieldsMember};
 
@@ -44,6 +44,14 @@ pub async fn edit(
     let mut server = server_id.as_server(db).await?;
     let target_user = member_id.as_user(db).await?;
     let mut member = member_id.as_member(db, &server.id).await?;
+
+    // Kept before the checks below, which take roles out of `server.roles`
+    let role_names: HashMap<String, String> = server
+        .roles
+        .iter()
+        .map(|(id, role)| (id.clone(), role.name.clone()))
+        .collect();
+    let roles_before = member.roles.clone();
 
     // Fetch our currrent permissions
     let mut query = DatabasePermissionQuery::new(db, &user).server(&server);
@@ -205,6 +213,23 @@ pub async fn edit(
     member
         .update(db, partial, remove.clone().into_iter().map(Into::into).collect())
         .await?;
+
+    if member.roles.iter().collect::<HashSet<_>>() != roles_before.iter().collect::<HashSet<_>>() {
+        let names = |ids: &[String]| {
+            let mut names = ids
+                .iter()
+                .map(|id| role_names.get(id).cloned().unwrap_or_else(|| id.clone()))
+                .collect::<Vec<_>>();
+            names.sort();
+            names.join(", ")
+        };
+
+        PermissionAuditEntry::new(&server.id, &user, "member_roles", &target_user.id)
+            .target_name(Some(target_user.username.clone()))
+            .change(Some(names(&roles_before)), Some(names(&member.roles)))
+            .record(db)
+            .await;
+    }
 
     if let Some(new_voice_channel) = new_voice_channel {
         if let Some(channel) = get_user_voice_channel_in_server(&target_user.id, &server.id).await?

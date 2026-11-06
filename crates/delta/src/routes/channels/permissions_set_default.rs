@@ -1,8 +1,8 @@
 use revolt_database::{
-    util::{permissions::DatabasePermissionQuery, reference::Reference}, voice::{sync_voice_permissions, VoiceClient}, Channel, Database, PartialChannel, User
+    util::{permissions::DatabasePermissionQuery, reference::Reference}, voice::{sync_voice_permissions, VoiceClient}, Channel, Database, PartialChannel, PermissionAuditEntry, User
 };
 use revolt_models::v0::{self, DataDefaultChannelPermissions};
-use revolt_permissions::{calculate_channel_permissions, ChannelPermission};
+use revolt_permissions::{calculate_channel_permissions, ChannelPermission, Override};
 use revolt_result::{create_error, Result};
 use rocket::{serde::json::Json, State};
 
@@ -27,6 +27,21 @@ pub async fn set_default_channel_permissions(
     let permissions = calculate_channel_permissions(&mut query).await;
 
     permissions.throw_if_lacking_channel_permission(ChannelPermission::ManagePermissions)?;
+
+    let default_of = |channel: &Channel| -> Option<Override> {
+        match channel {
+            Channel::TextChannel {
+                default_permissions,
+                ..
+            }
+            | Channel::ForumChannel {
+                default_permissions,
+                ..
+            } => default_permissions.map(Into::into),
+            _ => None,
+        }
+    };
+    let before = default_of(&channel);
 
     match &channel {
         Channel::Group { .. } => {
@@ -79,6 +94,17 @@ pub async fn set_default_channel_permissions(
         Some(server_id) => Some(Reference::from_unchecked(server_id).as_server(db).await?),
         None => None
     };
+
+    if let Some(server) = &server {
+        PermissionAuditEntry::new(&server.id, &user, "channel_default_permissions", channel.id())
+            .target_name(PermissionAuditEntry::channel_name(&channel))
+            .change(
+                PermissionAuditEntry::describe(before),
+                PermissionAuditEntry::describe(default_of(&channel)),
+            )
+            .record(db)
+            .await;
+    }
 
     sync_voice_permissions(db, voice_client, &channel, server.as_ref(), None).await?;
 
