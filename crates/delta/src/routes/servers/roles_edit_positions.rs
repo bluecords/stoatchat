@@ -1,5 +1,5 @@
 use revolt_database::{
-    util::{permissions::DatabasePermissionQuery, reference::Reference}, voice::{sync_voice_permissions, VoiceClient}, Database, User
+    util::{permissions::DatabasePermissionQuery, reference::Reference}, voice::{sync_voice_permissions, VoiceClient}, Database, PermissionAuditEntry, User
 };
 use revolt_models::v0;
 use revolt_permissions::{calculate_server_permissions, ChannelPermission};
@@ -68,7 +68,24 @@ pub async fn edit_role_ranks(
         }
     }
 
+    let names = |ids: &[String]| {
+        ids.iter()
+            .map(|id| server.roles.get(id).map_or(id.as_str(), |role| role.name.as_str()))
+            .collect::<Vec<_>>()
+            .join(" > ")
+    };
+    let before = names(&existing_order);
+    let after = names(&new_order);
+
     server.set_role_ordering(db, new_order).await?;
+
+    if before != after {
+        PermissionAuditEntry::new(&server.id, &user, "role_ranks", &server.id)
+            .target_name(Some(server.name.clone()))
+            .change(Some(before), Some(after))
+            .record(db)
+            .await;
+    }
 
     for channel_id in &server.channels {
         let channel = Reference::from_unchecked(channel_id).as_channel(db).await?;

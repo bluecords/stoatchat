@@ -11,6 +11,7 @@ mod messages;
 mod consent_records;
 mod discord_identities;
 mod migration_vault;
+mod permission_audit;
 mod policy_changes;
 mod ratelimit_events;
 mod safety_reports;
@@ -34,6 +35,7 @@ pub use messages::*;
 pub use consent_records::*;
 pub use discord_identities::*;
 pub use migration_vault::*;
+pub use permission_audit::*;
 pub use policy_changes::*;
 pub use ratelimit_events::*;
 pub use safety_reports::*;
@@ -65,6 +67,7 @@ pub trait AbstractDatabase:
     + consent_records::AbstractConsentRecord
     + discord_identities::AbstractDiscordIdentity
     + migration_vault::AbstractMigrationVault
+    + permission_audit::AbstractPermissionAudit
     + policy_changes::AbstractPolicyChange
     + ratelimit_events::AbstractRatelimitEvents
     + safety_reports::AbstractReport

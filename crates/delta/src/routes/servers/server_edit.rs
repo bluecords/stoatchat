@@ -1,9 +1,9 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use authifier::models::{totp::Totp, Account, ValidatedTicket};
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
-    Category, Database, File, PartialServer, User,
+    Category, Database, File, PartialServer, PermissionAuditEntry, Server, User,
 };
 use revolt_models::v0;
 use revolt_permissions::{calculate_server_permissions, ChannelPermission};
@@ -268,9 +268,83 @@ pub async fn edit(
         partial.owner = Some(server.owner.clone());
     }
 
+    let class_defaults_before = audit_class_defaults(&server);
+    let categories_before = audit_category_of(&server);
+
     server
         .update(db, partial, remove.into_iter().map(Into::into).collect())
         .await?;
 
+    let class_defaults_after = audit_class_defaults(&server);
+    if class_defaults_after != class_defaults_before {
+        PermissionAuditEntry::new(&server.id, &user, "class_defaults", &server.id)
+            .target_name(Some(server.name.clone()))
+            .change(Some(class_defaults_before), Some(class_defaults_after))
+            .record(db)
+            .await;
+    }
+
+    // A channel moving between categories changes what it inherits
+    let categories_after = audit_category_of(&server);
+    for channel_id in &server.channels {
+        let before = categories_before.get(channel_id).cloned();
+        let after = categories_after.get(channel_id).cloned();
+        if before != after {
+            let name = match Reference::from_unchecked(channel_id).as_channel(db).await {
+                Ok(channel) => PermissionAuditEntry::channel_name(&channel),
+                Err(_) => None,
+            };
+
+            PermissionAuditEntry::new(&server.id, &user, "channel_category", channel_id)
+                .target_name(name)
+                .change(before, after)
+                .record(db)
+                .await;
+        }
+    }
+
     Ok(Json(server.into()))
+}
+
+/// Class defaults in readable form, for the audit entry. Keys are sorted so
+/// the same settings always read the same: a `HashMap` serializes in random
+/// order, and serde_json keeps insertion order in this build.
+fn audit_class_defaults(server: &Server) -> String {
+    fn sorted(value: serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut entries: Vec<_> = map.into_iter().collect();
+                entries.sort_by(|a, b| a.0.cmp(&b.0));
+                serde_json::Value::Object(
+                    entries
+                        .into_iter()
+                        .map(|(key, value)| (key, sorted(value)))
+                        .collect(),
+                )
+            }
+            serde_json::Value::Array(items) => {
+                serde_json::Value::Array(items.into_iter().map(sorted).collect())
+            }
+            other => other,
+        }
+    }
+
+    serde_json::to_value(&server.class_defaults)
+        .map(|value| sorted(value).to_string())
+        .unwrap_or_default()
+}
+
+/// Which category title each channel sits in, for the audit entry
+fn audit_category_of(server: &Server) -> HashMap<String, String> {
+    server
+        .categories
+        .iter()
+        .flatten()
+        .flat_map(|category| {
+            category
+                .channels
+                .iter()
+                .map(move |channel| (channel.clone(), category.title.clone()))
+        })
+        .collect()
 }

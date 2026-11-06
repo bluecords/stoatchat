@@ -1,7 +1,7 @@
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
     voice::{sync_voice_permissions, VoiceClient},
-    Database, User,
+    Database, PermissionAuditEntry, User,
 };
 use revolt_permissions::{calculate_server_permissions, ChannelPermission};
 use revolt_result::{create_error, Result};
@@ -37,7 +37,20 @@ pub async fn delete(
         return Err(create_error!(NotElevated));
     }
 
+    let before = format!(
+        "rank={} class={:?} allow={} deny={}",
+        role.rank, role.class, role.permissions.a, role.permissions.d
+    );
+    let role_name = role.name.clone();
+
     role.delete(db, &server.id).await?;
+
+    PermissionAuditEntry::new(&server.id, &user, "role_delete", &role_id)
+        .target_name(Some(role_name.clone()))
+        .role(&role_id, Some(role_name))
+        .change(Some(before), None)
+        .record(db)
+        .await;
 
     for channel_id in &server.channels {
         let channel = Reference::from_unchecked(channel_id).as_channel(db).await?;

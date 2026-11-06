@@ -1,12 +1,21 @@
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
     voice::{sync_voice_permissions, VoiceClient},
-    Database, Server, User,
+    Database, PermissionAuditEntry, Server, User,
 };
 use revolt_models::v0;
 use revolt_permissions::{calculate_server_permissions, ChannelPermission, Override};
 use revolt_result::{create_error, Result};
 use rocket::{serde::json::Json, State};
+
+/// Title of a category, for the audit entry
+fn category_title(server: &Server, category_id: &str) -> Option<String> {
+    server
+        .categories
+        .as_ref()
+        .and_then(|categories| categories.iter().find(|c| c.id == category_id))
+        .map(|category| category.title.clone())
+}
 
 /// Re-sync voice permissions for every channel the category holds, since they
 /// all just inherited a change.
@@ -84,6 +93,9 @@ pub async fn set_category_role_permission(
         return Err(create_error!(NotElevated));
     }
 
+    let before = PermissionAuditEntry::describe(Some(current_value.clone()));
+    let after = PermissionAuditEntry::describe(Some(data.permissions.clone().into()));
+
     // Ensure we have access to grant these permissions forwards
     permissions
         .throw_permission_override(current_value, &data.permissions)
@@ -92,6 +104,13 @@ pub async fn set_category_role_permission(
     server
         .set_category_permissions(db, &category_id, Some(&role_id), data.permissions.into())
         .await?;
+
+    PermissionAuditEntry::new(&server.id, &user, "category_role_permissions", &category_id)
+        .target_name(category_title(&server, &category_id))
+        .role(&role_id, server.roles.get(&role_id).map(|role| role.name.clone()))
+        .change(before, after)
+        .record(db)
+        .await;
 
     sync_category_voice(db, voice_client, &server, &category_id, Some(&role_id)).await?;
 
@@ -129,6 +148,9 @@ pub async fn set_category_default_permissions(
 
     permissions.throw_if_lacking_channel_permission(ChannelPermission::ManagePermissions)?;
 
+    let before = PermissionAuditEntry::describe(current_value.clone());
+    let after = PermissionAuditEntry::describe(Some(data.permissions.clone().into()));
+
     permissions
         .throw_permission_override(current_value, &data.permissions)
         .await?;
@@ -136,6 +158,12 @@ pub async fn set_category_default_permissions(
     server
         .set_category_permissions(db, &category_id, None, data.permissions.into())
         .await?;
+
+    PermissionAuditEntry::new(&server.id, &user, "category_default_permissions", &category_id)
+        .target_name(category_title(&server, &category_id))
+        .change(before, after)
+        .record(db)
+        .await;
 
     sync_category_voice(db, voice_client, &server, &category_id, None).await?;
 

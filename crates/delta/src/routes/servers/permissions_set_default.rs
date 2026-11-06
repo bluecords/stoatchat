@@ -1,5 +1,5 @@
 use revolt_database::{
-    util::{permissions::DatabasePermissionQuery, reference::Reference}, voice::{sync_voice_permissions, VoiceClient}, Database, PartialServer, User
+    util::{permissions::DatabasePermissionQuery, reference::Reference}, voice::{sync_voice_permissions, VoiceClient}, Database, PartialServer, PermissionAuditEntry, User
 };
 use revolt_models::v0;
 use revolt_permissions::{
@@ -39,6 +39,8 @@ pub async fn set_default_server_permissions(
         )
         .await?;
 
+    let before = server.default_permissions;
+
     server
         .update(
             db,
@@ -49,6 +51,15 @@ pub async fn set_default_server_permissions(
             vec![],
         )
         .await?;
+
+    PermissionAuditEntry::new(&server.id, &user, "server_default_permissions", &server.id)
+        .target_name(Some(server.name.clone()))
+        .change(
+            Some(format!("allow={before}")),
+            Some(format!("allow={}", data.permissions)),
+        )
+        .record(db)
+        .await;
 
     for channel_id in &server.channels {
         let channel = Reference::from_unchecked(channel_id).as_channel(db).await?;

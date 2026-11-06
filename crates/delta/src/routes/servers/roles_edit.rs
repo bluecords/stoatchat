@@ -1,7 +1,7 @@
 use revolt_database::{
     util::{permissions::DatabasePermissionQuery, reference::Reference},
     voice::{sync_voice_permissions, VoiceClient},
-    Database, File, PartialRole, User,
+    Database, File, PartialRole, PermissionAuditEntry, User,
 };
 use revolt_models::v0;
 use revolt_permissions::{calculate_server_permissions, ChannelPermission};
@@ -43,6 +43,14 @@ pub async fn edit(
             return Err(create_error!(NotElevated));
         }
 
+        let describe = |role: &revolt_database::Role| {
+            format!(
+                "name={} class={:?} max_message_length={:?}",
+                role.name, role.class, role.max_message_length
+            )
+        };
+        let before = describe(&role);
+
         let v0::DataEditRole {
             name,
             colour,
@@ -82,6 +90,16 @@ pub async fn edit(
             remove.into_iter().map(Into::into).collect(),
         )
         .await?;
+
+        let after = describe(&role);
+        if after != before {
+            PermissionAuditEntry::new(&server.id, &user, "role_edit", &role_id)
+                .target_name(Some(role.name.clone()))
+                .role(&role_id, Some(role.name.clone()))
+                .change(Some(before), Some(after))
+                .record(db)
+                .await;
+        }
 
         for channel_id in &server.channels {
             let channel = Reference::from_unchecked(channel_id).as_channel(db).await?;
