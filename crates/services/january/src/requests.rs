@@ -20,6 +20,10 @@ use std::{
 };
 use url::{Host, Url};
 
+/// User agent sent with outgoing requests
+static USER_AGENT: &str =
+    "Mozilla/5.0 (compatible; January/2.0; +https://github.com/stoatchat/stoatchat)";
+
 lazy_static! {
     /// Request client
     static ref CLIENT: Client = reqwest::Client::builder()
@@ -286,46 +290,62 @@ impl Request {
         if let Some(hit) = EMBED_CACHE.get(&url).await {
             Ok(hit)
         } else {
-            let request = Request::new_from_str(&url).await?;
-            let embed = match (request.mime.type_(), request.mime.subtype()) {
-                (_, mime::HTML) => {
-                    let content_type = request
-                        .response
-                        .headers()
-                        .get(header::CONTENT_TYPE)
-                        .and_then(|value| value.to_str().ok())
-                        .and_then(|value| value.parse::<Mime>().ok());
-
-                    let encoding_name = content_type
-                        .as_ref()
-                        .and_then(|mime| mime.get_param("charset").map(|charset| charset.as_str()))
-                        .unwrap_or("utf-8");
-
-                    let encoding =
-                        Encoding::for_label(encoding_name.as_bytes()).unwrap_or(&UTF_8_INIT);
-
-                    let bytes = report_internal_error!(request.response.bytes().await)?;
-                    let (text, _, _) = encoding.decode(&bytes);
-
-                    crate::website_embed::create_website_embed(&url, &text)
-                        .await
-                        .map(Embed::Website)
-                        .unwrap_or_default()
-                }
-                (mime::IMAGE, _) => Request::fetch_image_metadata(&url, Some(request))
-                    .await
-                    .map(|res| res.map(Embed::Image).unwrap_or_default())
-                    .unwrap_or_default(),
-                (mime::VIDEO, _) => Request::fetch_video_metadata(&url, Some(request))
-                    .await
-                    .map(|res| res.map(Embed::Video).unwrap_or_default())
-                    .unwrap_or_default(),
-                _ => Embed::None,
+            let embed = if crate::amazon::is_amazon_url(&url) {
+                // Amazon usually serves a captcha page to servers, fill in what we can
+                crate::amazon::complete_embed(&url, Request::scrape_embed(&url).await).await?
+            } else {
+                Request::scrape_embed(&url).await?
             };
 
             EMBED_CACHE.insert(url.to_owned(), embed.clone()).await;
             Ok(embed)
         }
+    }
+
+    /// Fetch a URL and generate an embed from its contents
+    async fn scrape_embed(url: &str) -> Result<Embed> {
+        let request = Request::new_from_str(url).await?;
+        let embed = match (request.mime.type_(), request.mime.subtype()) {
+            (_, mime::HTML) => {
+                let content_type = request
+                    .response
+                    .headers()
+                    .get(header::CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse::<Mime>().ok());
+
+                let encoding_name = content_type
+                    .as_ref()
+                    .and_then(|mime| mime.get_param("charset").map(|charset| charset.as_str()))
+                    .unwrap_or("utf-8");
+
+                let encoding = Encoding::for_label(encoding_name.as_bytes()).unwrap_or(&UTF_8_INIT);
+
+                let bytes = report_internal_error!(request.response.bytes().await)?;
+                let (text, _, _) = encoding.decode(&bytes);
+
+                if crate::amazon::is_amazon_url(url) && crate::amazon::is_captcha_page(&text) {
+                    // Don't build an embed out of Amazon's bot check page
+                    Embed::None
+                } else {
+                    crate::website_embed::create_website_embed(url, &text)
+                        .await
+                        .map(Embed::Website)
+                        .unwrap_or_default()
+                }
+            }
+            (mime::IMAGE, _) => Request::fetch_image_metadata(url, Some(request))
+                .await
+                .map(|res| res.map(Embed::Image).unwrap_or_default())
+                .unwrap_or_default(),
+            (mime::VIDEO, _) => Request::fetch_video_metadata(url, Some(request))
+                .await
+                .map(|res| res.map(Embed::Video).unwrap_or_default())
+                .unwrap_or_default(),
+            _ => Embed::None,
+        };
+
+        Ok(embed)
     }
 
     /// Send a new request to a service
@@ -343,19 +363,19 @@ impl Request {
 
         loop {
             let response = CLIENT
-            .get(url)
-            .header(
-                "User-Agent",
-                if RE_USER_AGENT_SPOOFING_AS_DISCORD.is_match(&url_host_str) {
-                    "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)"
-                } else {
-                    "Mozilla/5.0 (compatible; January/2.0; +https://github.com/stoatchat/stoatchat)"
-                },
-            )
-            .header("Accept-Language", "en-US,en;q=0.5")
-            .send()
-            .await
-            .map_err(|_| create_error!(ProxyError))?;
+                .get(url)
+                .header(
+                    "User-Agent",
+                    if RE_USER_AGENT_SPOOFING_AS_DISCORD.is_match(&url_host_str) {
+                        "Mozilla/5.0 (compatible; Discordbot/2.0; +https://discordapp.com)"
+                    } else {
+                        USER_AGENT
+                    },
+                )
+                .header("Accept-Language", "en-US,en;q=0.5")
+                .send()
+                .await
+                .map_err(|_| create_error!(ProxyError))?;
 
             if response.status().is_redirection() {
                 redirect_count += 1;
@@ -397,6 +417,39 @@ impl Request {
 
             return Ok(Request { response, mime });
         }
+    }
+
+    /// Follow redirects from a URL without loading the final page, returning
+    /// the first redirect target accepted by the predicate
+    pub async fn find_redirect(url: &str, accept: impl Fn(&str) -> bool) -> Option<Url> {
+        let mut url = Url::parse(url).ok()?;
+
+        for _ in 0..5 {
+            if Request::url_is_blacklisted(&url).await.ok()?.blocked {
+                return None;
+            }
+
+            let response = CLIENT
+                .get(url.clone())
+                .header("User-Agent", USER_AGENT)
+                .header("Accept-Language", "en-US,en;q=0.5")
+                .send()
+                .await
+                .ok()?;
+
+            if !response.status().is_redirection() {
+                return None;
+            }
+
+            let location = response.headers().get("location")?.to_str().ok()?;
+            url = url.join(location).ok()?;
+
+            if accept(url.as_str()) {
+                return Some(url);
+            }
+        }
+
+        None
     }
 
     pub async fn new_from_str(url: &str) -> Result<Request> {

@@ -7773,6 +7773,7 @@ dependencies = [
  "mime",
  "moka",
  "pdk-ip-filter-lib",
+ "percent-encoding",
  "regex",
  "reqwest 0.13.2",
  "revolt-config",

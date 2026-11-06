@@ -1,6 +1,6 @@
 name: Build NAC API (patched)
 
-# Builds the custom bluecords/{api,events,crond,pushd,voice-ingress} images from this fork
+# Builds the custom bluecords/{api,events,crond,pushd,voice-ingress,january} images from this fork
 # and publishes them under the REAL release-please version number - not a
 # nickname tag. The root Dockerfile compiles the Rust workspace (where NAC
 # patches live); crates/delta/Dockerfile, crates/bonfire/Dockerfile,
@@ -165,6 +165,18 @@ jobs:
           [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/voice-ingress:${{ steps.tag.outputs.tag }}" || docker push ghcr.io/bluecords/voice-ingress:${{ steps.tag.outputs.tag }}
           [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/voice-ingress:latest" || docker push ghcr.io/bluecords/voice-ingress:latest
           echo "Pushed ghcr.io/bluecords/voice-ingress:${{ steps.tag.outputs.tag }} (+ :latest)"
+
+      - name: Build & push january image
+        # Link previews. Prod ran the upstream image until the Amazon fallback
+        # in crates/services/january made the fork's own build necessary.
+        run: |
+          DOCKER_BUILDKIT=1 docker build \
+            -t ghcr.io/bluecords/january:${{ steps.tag.outputs.tag }} \
+            -t ghcr.io/bluecords/january:latest \
+            -f crates/services/january/Dockerfile .
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/january:${{ steps.tag.outputs.tag }}" || docker push ghcr.io/bluecords/january:${{ steps.tag.outputs.tag }}
+          [ "$DRY_RUN" = "true" ] && echo "dry run: not pushing ghcr.io/bluecords/january:latest" || docker push ghcr.io/bluecords/january:latest
+          echo "Pushed ghcr.io/bluecords/january:${{ steps.tag.outputs.tag }} (+ :latest)"
 
       - name: Trim the build cache (self-hosted only)
         if: always() && runner.environment == 'self-hosted'

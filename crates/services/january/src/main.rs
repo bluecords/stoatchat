@@ -9,6 +9,7 @@ use utoipa::{
 };
 use utoipa_scalar::{Scalar, Servable as ScalarServable};
 
+pub mod amazon;
 mod api;
 pub mod requests;
 pub mod website_embed;
