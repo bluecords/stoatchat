@@ -252,22 +252,36 @@ impl Consumer for MassMessageConsumer {
                         }
 
                         let mut q = query.clone().members(&chunk);
-                        let viewing_members: Vec<String> = q
-                            .members_can_see_channel()
-                            .await
-                            .iter()
-                            .filter_map(|(uid, viewable)| {
-                                if *viewable && !existing_mentions.contains(uid) {
-                                    Some(uid.clone())
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
+                        let can_see = q.members_can_see_channel().await;
+                        // never badge the author for their own message
+                        let viewing_members = only_viewers(
+                            chunk
+                                .iter()
+                                .map(|member| member.id.user.clone())
+                                .filter(|user| *user != push.message.author),
+                            &can_see,
+                        );
 
                         debug!("viewing members: {:?}", viewing_members);
 
-                        let targets = viewing_members;
+                        // A role mention is a mention: badge it like @everyone does,
+                        // so staff who miss the push still see who called for them.
+                        if let Err(err) = self
+                            .db
+                            .add_mention_to_many_unreads(
+                                push.channel.id(),
+                                &viewing_members,
+                                &[push.message.id.clone()],
+                            )
+                            .await
+                        {
+                            revolt_config::capture_error(&err);
+                        }
+
+                        let targets: Vec<String> = viewing_members
+                            .into_iter()
+                            .filter(|id| !existing_mentions.contains(id))
+                            .collect();
 
                         debug!("targets: {:?}", targets);
 
