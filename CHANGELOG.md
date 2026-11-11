@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.2](https://github.com/bluecords/stoatchat/compare/v0.38.1...v0.38.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **messages:** check mass-mention permission against the stored user ([#134](https://github.com/bluecords/stoatchat/issues/134)) ([790a5f3](https://github.com/bluecords/stoatchat/commit/790a5f3b67213bbb49b6bd9f0a805691b18be06f))
+
 ## [0.38.1](https://github.com/bluecords/stoatchat/compare/v0.38.0...v0.38.1) (2026-11-10)
 
 
