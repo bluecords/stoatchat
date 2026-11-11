@@ -489,7 +489,16 @@ impl Message {
                 if user.is_err() {
                     return Err(create_error!(InvalidProperty));
                 }
-                let owned_user: User = user.unwrap().to_owned().into();
+                // Load the sender from the database rather than converting the
+                // API `v0::User` back into a database `User`: that conversion
+                // cannot carry `last_acknowledged_policy_change` (the API model
+                // has no such field) and fills it with UNIX_EPOCH. With the
+                // consent gate on, the permission query below then saw EVERY
+                // non-privileged sender as unconsented, zeroed their server
+                // permissions, and refused `@everyone` / `@online` / role
+                // mentions in any channel whose own overrides did not grant
+                // their roles View + Mention (403 MissingPermission).
+                let owned_user: User = db.fetch_user(&user.unwrap().id).await?;
 
                 let mut query = DatabasePermissionQuery::new(db, &owned_user).channel(&channel);
                 let perms = calculate_channel_permissions(&mut query).await;
