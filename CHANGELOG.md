@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.1](https://github.com/bluecords/stoatchat/compare/v0.38.0...v0.38.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **pushd:** a role mention adds a mention badge, like [@everyone](https://github.com/everyone) ([#132](https://github.com/bluecords/stoatchat/issues/132)) ([6002cc0](https://github.com/bluecords/stoatchat/commit/6002cc002091398e7de8a9360779d63c1c5acad9))
+
 ## [0.38.0](https://github.com/bluecords/stoatchat/compare/v0.37.5...v0.38.0) (2026-11-06)
 
 
